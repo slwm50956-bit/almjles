@@ -149,7 +149,7 @@ const TicketSchema = new mongoose.Schema({
   claimedAt: Date,
   addedMembers: [String],
   status: { type: String, enum: ['open', 'closed'], default: 'open' },
-  closed: { type: Boolean, default: false }, // ✅ منع تكرار الإغلاق
+  closed: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
 });
 const Ticket = mongoose.model('Ticket', TicketSchema);
@@ -554,8 +554,7 @@ async function applyProtectionAction(interactionOrMessage, member, guildId, conf
 // ============================================================
 // ========== 🎨 ألوان الأزرار الموحدة ==========
 // ============================================================
-// أحمر للأزرار الإيجابية (تفعيل، إضافة، حفظ، إلخ)
-// رمادي للأزرار الثانوية (رجوع، إلغاء، عرض، إلخ)
+// ⚠️ ملاحظة: كل الأزرار بالبوت إما Danger (أحمر) أو Secondary (رمادي) فقط
 
 const BTN = {
   MAIN: ButtonStyle.Danger,      // 🔴 للأزرار الرئيسية
@@ -1116,10 +1115,6 @@ function isAdminCommand(cmd) {
   ];
   return adminCmds.includes(cmd);
 }
-
-// ============================================================
-// 🔚 نهاية الدفعة 1/3
-// ============================================================
 // ============================================================
 // ========== المعالج الرئيسي الموحد لـ messageCreate ==========
 // ============================================================
@@ -1139,8 +1134,6 @@ client.on('messageCreate', async (message) => {
   if (config.suggestionsChannel && message.channel.id === config.suggestionsChannel) {
     console.log(`💡 [الاقتراحات] رسالة في روم الاقتراحات من ${message.author.tag}: "${message.content.slice(0, 50)}"`);
 
-    // ✅ استثناء الأوامر فقط (اللي تبدأ بـ !)
-    // كل الأعضاء بمن فيهم المتحكمين يتحولوا
     if (!isCommand) {
       try {
         const content = message.content;
@@ -1172,7 +1165,6 @@ client.on('messageCreate', async (message) => {
         const sentMsg = await message.channel.send({ embeds: [suggestEmbed] });
         console.log(`✅ [الاقتراحات] تم إرسال الإيمبد: ${sentMsg.id}`);
 
-        // ✅ افتح Thread
         let thread;
         try {
           thread = await sentMsg.startThread({
@@ -1224,7 +1216,6 @@ client.on('messageCreate', async (message) => {
       }
       return;
     }
-    // إذا كان أمر (!) → نكمل للتحقق من الأوامر (ما نرجع)
   }
 
   // ============================================================
@@ -1235,7 +1226,6 @@ client.on('messageCreate', async (message) => {
       const member = message.member;
       if (!member) return;
 
-      // استثناء روم الاقتراحات
       if (config.suggestionsChannel && message.channel.id === config.suggestionsChannel) return;
 
       const isExempt = await hasPermission(member, guildId);
@@ -1680,7 +1670,6 @@ client.on('messageCreate', async (message) => {
           return;
         }
 
-        // ✅ روم الاقتراحات
         if (sub === 'روم_اقتراحات') {
           const channel = message.mentions.channels.first();
           if (!channel) {
@@ -1695,7 +1684,6 @@ client.on('messageCreate', async (message) => {
           return;
         }
 
-        // ✅ روم استلام التذاكر
         if (sub === 'تكت_لوق' || sub === 'تيكت_لوق') {
           const channel = message.mentions.channels.first();
           if (!channel) {
@@ -1710,7 +1698,6 @@ client.on('messageCreate', async (message) => {
           return;
         }
 
-        // ===== إعدادات بانل التقديمات =====
         if (sub === 'تقديم') {
           const option = args[1]?.toLowerCase();
           const optionValue = args.slice(2).join(' ');
@@ -1785,7 +1772,6 @@ client.on('messageCreate', async (message) => {
           return;
         }
 
-        // ===== إعدادات الزاجل =====
         if (sub === 'روم_زاجل') {
           const channel = message.mentions.channels.first();
           if (!channel) {
@@ -1837,7 +1823,6 @@ client.on('messageCreate', async (message) => {
           return;
         }
 
-        // ===== إدارة الرتب الذاتية =====
         if (sub === 'رتب') {
           const action = args[1]?.toLowerCase();
           const rest = args.slice(2);
@@ -2092,7 +2077,6 @@ client.on('messageCreate', async (message) => {
           return;
         }
 
-        // ===== باقي أوامر التعيين =====
         if (sub === 'ترحيب') {
           const channel = message.mentions.channels.first();
           if (!channel) {
@@ -3448,8 +3432,11 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
+  // ============================================================
   // ========== XP، الأوتو لاين، الردود التلقائية ==========
+  // ============================================================
   try {
+    let levelUpSentAutoLine = false;
     const isLevelNotifyChannel = config.levelChannelId && message.channel.id === config.levelChannelId;
     if (!isLevelNotifyChannel) {
       const userData = await getUserData(guildId, userId);
@@ -3473,7 +3460,24 @@ client.on('messageCreate', async (message) => {
             .setTimestamp();
           const generalImg = getGeneralImage(message.guild, config);
           if (generalImg) embed.setThumbnail(generalImg);
-          await levelChannel.send({ embeds: [embed] }).catch(() => {});
+          await levelChannel.send({ content: `${message.author}`, embeds: [embed] }).catch(() => {});
+        }
+
+        // ✅ تشغيل الأوتو لاين في الروم الحالي بعد رسالة التهنئة (لو مفعّل)
+        const levelAutoLine = await AutoLine.findOne({ guildId, channelId: message.channel.id });
+        if (levelAutoLine && levelAutoLine.enabled && (levelAutoLine.text || levelAutoLine.image)) {
+          try {
+            if (levelAutoLine.text && levelAutoLine.image) {
+              const alEmbed = new EmbedBuilder().setDescription(levelAutoLine.text).setColor(THEME.ORANGE).setImage(levelAutoLine.image).setTimestamp();
+              await message.channel.send({ embeds: [alEmbed] });
+            } else if (levelAutoLine.image) {
+              const alEmbed = new EmbedBuilder().setColor(THEME.ORANGE).setImage(levelAutoLine.image).setTimestamp();
+              await message.channel.send({ embeds: [alEmbed] });
+            } else if (levelAutoLine.text) {
+              await message.channel.send(levelAutoLine.text);
+            }
+            levelUpSentAutoLine = true;
+          } catch (e) {}
         }
 
         const levelRole = await LevelRole.findOne({ guildId, level: userData.level });
@@ -3489,23 +3493,26 @@ client.on('messageCreate', async (message) => {
       }
     }
 
-    const auto = await AutoLine.findOne({ guildId, channelId: message.channel.id });
-    if (auto && auto.enabled && (auto.text || auto.image)) {
-      const channel = client.channels.cache.get(message.channel.id);
-      if (channel) {
-        try {
-          if (auto.text && auto.image) {
-            const embed = new EmbedBuilder().setDescription(auto.text).setColor(THEME.ORANGE).setImage(auto.image).setTimestamp();
-            await channel.send({ embeds: [embed] });
-          } else if (auto.image) {
-            const embed = new EmbedBuilder().setColor(THEME.ORANGE).setImage(auto.image).setTimestamp();
-            await channel.send({ embeds: [embed] });
-          } else if (auto.text) {
-            await channel.send(auto.text);
-          }
-        } catch (e) {}
+    // ✅ الأوتو لاين العادي (نتخطاه لو اشتغل فوق مع الليفل)
+    if (!levelUpSentAutoLine) {
+      const auto = await AutoLine.findOne({ guildId, channelId: message.channel.id });
+      if (auto && auto.enabled && (auto.text || auto.image)) {
+        const channel = client.channels.cache.get(message.channel.id);
+        if (channel) {
+          try {
+            if (auto.text && auto.image) {
+              const embed = new EmbedBuilder().setDescription(auto.text).setColor(THEME.ORANGE).setImage(auto.image).setTimestamp();
+              await channel.send({ embeds: [embed] });
+            } else if (auto.image) {
+              const embed = new EmbedBuilder().setColor(THEME.ORANGE).setImage(auto.image).setTimestamp();
+              await channel.send({ embeds: [embed] });
+            } else if (auto.text) {
+              await channel.send(auto.text);
+            }
+          } catch (e) {}
+        }
+        return;
       }
-      return;
     }
 
     const autoReply = await findAutoReply(guildId, message.content);
@@ -3525,10 +3532,6 @@ client.on('messageCreate', async (message) => {
     console.error('❌ خطأ في معالجة الرسالة:', error);
   }
 });
-
-// ============================================================
-// 🔚 نهاية الدفعة 2/3
-// ============================================================
 // ============================================================
 // ========== معالج التفاعلات ==========
 // ============================================================
@@ -4600,10 +4603,9 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ============================================================
-    // ========== ✅ زر إغلاق التذكرة (بدون تكرار) ==========
+    // ========== ✅ زر إغلاق التذكرة ==========
     // ============================================================
     if (interaction.isButton() && interaction.customId === 'close_ticket') {
-      // ✅ منع التكرار
       if (interaction.replied || interaction.deferred) return;
 
       if (!(await hasPermission(interaction.member, interaction.guild.id))) {
@@ -4615,12 +4617,10 @@ client.on('interactionCreate', async (interaction) => {
       const config = await getGuildConfig(interaction.guild.id);
       const ticketData = await getTicketByChannel(interaction.guild.id, channel.id);
 
-      // ✅ منع التكرار — إذا كانت مغلقة بالفعل
       if (ticketData && ticketData.closed) {
         return interaction.reply({ content: '⚠️ هذه التذكرة مغلقة بالفعل.', ephemeral: true });
       }
 
-      // ✅ نحفظ حالة الإغلاق
       if (ticketData) {
         ticketData.closed = true;
         ticketData.status = 'closed';
@@ -4642,7 +4642,6 @@ client.on('interactionCreate', async (interaction) => {
         } catch (e) {}
       }
 
-      // ✅ فقط التقييم — بدون ملخص
       if (ticketOwnerId && config.ticketRatingEnabled !== false) {
         try {
           const owner = await interaction.guild.members.fetch(ticketOwnerId);

@@ -1,5 +1,5 @@
 // ============================================================
-// البوت الكامل - ثيم برتقالي وأسود - MongoDB
+// البوت الكامل - ثيم أحمر - MongoDB
 // ============================================================
 
 const {
@@ -33,15 +33,15 @@ if (!MONGO_URL) {
 const THEME = {
   BLACK: 0x0d0d0d,
   DARK: 0x1a1a1a,
-  ORANGE: 0xff6b00,
-  ORANGE_LIGHT: 0xff8c33,
-  ORANGE_DARK: 0xcc5500,
-  ORANGE_HEX: '#ff6b00',
+  ORANGE: 0xff0000,
+  ORANGE_LIGHT: 0xff3333,
+  ORANGE_DARK: 0xcc0000,
+  ORANGE_HEX: '#ff0000',
   BLACK_HEX: '#0d0d0d',
   DARK_HEX: '#1a1a1a',
-  SUCCESS: 0xff6b00,
-  ERROR: 0xed4245,
-  WARN: 0xfaa61a,
+  SUCCESS: 0xff0000,
+  ERROR: 0xff0000,
+  WARN: 0xff0000,
 };
 
 try {
@@ -554,7 +554,7 @@ async function applyProtectionAction(interactionOrMessage, member, guildId, conf
 // ============================================================
 // ========== 🎨 ألوان الأزرار الموحدة ==========
 // ============================================================
-// ⚠️ ملاحظة: كل الأزرار بالبوت إما Danger (أحمر) أو Secondary (رمادي) فقط
+// ⚠️ كل الأزرار بالبوت إما Danger (أحمر) أو Secondary (رمادي) فقط
 
 const BTN = {
   MAIN: ButtonStyle.Danger,      // 🔴 للأزرار الرئيسية
@@ -926,7 +926,7 @@ function logToChannel(guildId, data) {
 function drawDefaultBackground(ctx, width, height) {
   const gradient = ctx.createLinearGradient(0, 0, width, height);
   gradient.addColorStop(0, '#0d0d0d');
-  gradient.addColorStop(0.5, '#2b1500');
+  gradient.addColorStop(0.5, '#4d0000');
   gradient.addColorStop(1, '#0d0d0d');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, width, height);
@@ -1129,7 +1129,7 @@ client.on('messageCreate', async (message) => {
   const generalImage = getGeneralImage(message.guild, config);
 
   // ============================================================
-  // ========== 💡 نظام الاقتراحات الجديد (Threads) ==========
+  // ========== 💡 نظام الاقتراحات (Threads) ==========
   // ============================================================
   if (config.suggestionsChannel && message.channel.id === config.suggestionsChannel) {
     console.log(`💡 [الاقتراحات] رسالة في روم الاقتراحات من ${message.author.tag}: "${message.content.slice(0, 50)}"`);
@@ -1482,7 +1482,7 @@ client.on('messageCreate', async (message) => {
             .setDescription(`**تم قبولك في قسم ${section.name} في سيرفر ${message.guild.name}، حياك للتعليم والاختبار**`)
             .setThumbnail(message.guild.iconURL())
             .setFooter({ text: message.guild.name, iconURL: message.guild.iconURL() })
-            .setColor(0x00FF00)
+            .setColor(THEME.ORANGE)
             .setTimestamp();
 
           if (logChannel) await logChannel.send({ embeds: [embed] }).catch(() => {});
@@ -1505,7 +1505,7 @@ client.on('messageCreate', async (message) => {
             .setDescription(`**تم رفضك في قسم ${section.name} في سيرفر ${message.guild.name}**`)
             .setThumbnail(message.guild.iconURL())
             .setFooter({ text: message.guild.name, iconURL: message.guild.iconURL() })
-            .setColor(0xFF0000)
+            .setColor(THEME.ORANGE)
             .setTimestamp();
 
           if (logChannel) await logChannel.send({ embeds: [embed] }).catch(() => {});
@@ -1524,7 +1524,7 @@ client.on('messageCreate', async (message) => {
 
         logToChannel(guildId, {
           title: '📋 نتيجة تقديم',
-          color: resultNormalized === 'accept' ? 0x00FF00 : 0xFF0000,
+          color: THEME.ORANGE,
           description: `**العضو:** ${member.user.tag}\n**القسم:** ${section.name}\n**النتيجة:** ${resultNormalized === 'accept' ? '✅ قبول' : '❌ رفض'}\n**بواسطة:** ${message.author}`,
           footer: 'نظام التقديمات'
         });
@@ -3463,21 +3463,42 @@ client.on('messageCreate', async (message) => {
           await levelChannel.send({ content: `${message.author}`, embeds: [embed] }).catch(() => {});
         }
 
-        // ✅ تشغيل الأوتو لاين في الروم الحالي بعد رسالة التهنئة (لو مفعّل)
-        const levelAutoLine = await AutoLine.findOne({ guildId, channelId: message.channel.id });
-        if (levelAutoLine && levelAutoLine.enabled && (levelAutoLine.text || levelAutoLine.image)) {
+        // ✅ الأوتو لاين في الروم الأصلي (لو مفعّل فيه)
+        const originalAutoLine = await AutoLine.findOne({ guildId, channelId: message.channel.id });
+        if (originalAutoLine && originalAutoLine.enabled && (originalAutoLine.text || originalAutoLine.image)) {
           try {
-            if (levelAutoLine.text && levelAutoLine.image) {
-              const alEmbed = new EmbedBuilder().setDescription(levelAutoLine.text).setColor(THEME.ORANGE).setImage(levelAutoLine.image).setTimestamp();
+            if (originalAutoLine.text && originalAutoLine.image) {
+              const alEmbed = new EmbedBuilder().setDescription(originalAutoLine.text).setColor(THEME.ORANGE).setImage(originalAutoLine.image).setTimestamp();
               await message.channel.send({ embeds: [alEmbed] });
-            } else if (levelAutoLine.image) {
-              const alEmbed = new EmbedBuilder().setColor(THEME.ORANGE).setImage(levelAutoLine.image).setTimestamp();
+            } else if (originalAutoLine.image) {
+              const alEmbed = new EmbedBuilder().setColor(THEME.ORANGE).setImage(originalAutoLine.image).setTimestamp();
               await message.channel.send({ embeds: [alEmbed] });
-            } else if (levelAutoLine.text) {
-              await message.channel.send(levelAutoLine.text);
+            } else if (originalAutoLine.text) {
+              await message.channel.send(originalAutoLine.text);
             }
             levelUpSentAutoLine = true;
           } catch (e) {}
+        }
+
+        // ✅ الأوتو لاين في روم الليفل (لو مختلف عن الروم الأصلي ولو مفعّل فيه)
+        if (levelChannelId !== message.channel.id) {
+          const levelAutoLine = await AutoLine.findOne({ guildId, channelId: levelChannelId });
+          if (levelAutoLine && levelAutoLine.enabled && (levelAutoLine.text || levelAutoLine.image)) {
+            const lvlCh = message.guild.channels.cache.get(levelChannelId);
+            if (lvlCh) {
+              try {
+                if (levelAutoLine.text && levelAutoLine.image) {
+                  const alEmbed = new EmbedBuilder().setDescription(levelAutoLine.text).setColor(THEME.ORANGE).setImage(levelAutoLine.image).setTimestamp();
+                  await lvlCh.send({ embeds: [alEmbed] });
+                } else if (levelAutoLine.image) {
+                  const alEmbed = new EmbedBuilder().setColor(THEME.ORANGE).setImage(levelAutoLine.image).setTimestamp();
+                  await lvlCh.send({ embeds: [alEmbed] });
+                } else if (levelAutoLine.text) {
+                  await lvlCh.send(levelAutoLine.text);
+                }
+              } catch (e) {}
+            }
+          }
         }
 
         const levelRole = await LevelRole.findOne({ guildId, level: userData.level });
@@ -3493,7 +3514,7 @@ client.on('messageCreate', async (message) => {
       }
     }
 
-    // ✅ الأوتو لاين العادي (نتخطاه لو اشتغل فوق مع الليفل)
+    // ✅ الأوتو لاين العادي (نتخطاه لو اشتغل فوق مع الليفل بنفس الروم)
     if (!levelUpSentAutoLine) {
       const auto = await AutoLine.findOne({ guildId, channelId: message.channel.id });
       if (auto && auto.enabled && (auto.text || auto.image)) {

@@ -37,28 +37,21 @@ if (!MONGO_URL) {
 // ============================================================
 
 const THEME = {
-  // ===== الألوان الأساسية =====
-  BLACK: 0x0a0a0f,          // أسود ملكي غامق
-  DARK: 0x14141a,           // رمادي ملكي غامق
-  ORANGE: 0x8b0000,         // أحمر ملكي غامق (الأساسي)
-  ORANGE_LIGHT: 0xb01030,   // أحمر ملكي فاتح
-  ORANGE_DARK: 0x5c0000,    // أحمر ملكي داكن جداً
-
-  // ===== HEX للألوان =====
+  BLACK: 0x0a0a0f,
+  DARK: 0x14141a,
+  ORANGE: 0x8b0000,
+  ORANGE_LIGHT: 0xb01030,
+  ORANGE_DARK: 0x5c0000,
   ORANGE_HEX: '#8b0000',
   BLACK_HEX: '#0a0a0f',
   DARK_HEX: '#14141a',
-
-  // ===== ألوان الحالات =====
-  SUCCESS: 0xb8860b,        // ذهبي غامق (للنجاح)
-  ERROR: 0xc41e3a,          // كرزي غامق (للأخطاء)
-  WARN: 0xffb000,           // ذهبي برتقالي (للتحذيرات)
-
-  // ===== ألوان إضافية فخمة =====
-  GOLD: 0xd4af37,           // ذهبي ملكي
-  GOLD_DARK: 0xb8860b,      // ذهبي غامق
-  CREAM: 0xf5e6d3,          // كريمي فاخر
-  PLATINUM: 0xe5e4e2,       // بلاتيني
+  SUCCESS: 0xb8860b,
+  ERROR: 0xc41e3a,
+  WARN: 0xffb000,
+  GOLD: 0xd4af37,
+  GOLD_DARK: 0xb8860b,
+  CREAM: 0xf5e6d3,
+  PLATINUM: 0xe5e4e2,
 };
 
 try {
@@ -145,6 +138,7 @@ const WarnSchema = new mongoose.Schema({
 });
 const Warn = mongoose.model('Warn', WarnSchema);
 
+// ✅ تعديل: إضافة panelTitle
 const TicketSettingsSchema = new mongoose.Schema({
   guildId: { type: String, unique: true, required: true },
   sections: [{
@@ -152,6 +146,7 @@ const TicketSettingsSchema = new mongoose.Schema({
     roleId: String,
     emoji: { type: String, default: '📌' },
   }],
+  panelTitle: { type: String, default: '🎫 KINGDOM | مركز الدعم الملكي' },
   text: { type: String, default: 'مرحباً بكم في مركز الدعم الملكي، لفتح تذكرة اختر القسم من القائمة أدناه.' },
   image: { type: String, default: null },
 });
@@ -569,12 +564,42 @@ async function applyProtectionAction(interactionOrMessage, member, guildId, conf
 }
 
 // ============================================================
+// ========== ✅ دالة إرسال الأوتو لاين (صورة فقط) ==========
+// ============================================================
+
+async function sendAutoLineOnly(channel, auto) {
+  if (!auto || !auto.enabled) return false;
+
+  // إذا في صورة: أرسل الصورة فقط
+  if (auto.image) {
+    try {
+      await channel.send({ content: auto.image });
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // إذا ما في صورة، أرسل النص (كحل احتياطي فقط)
+  if (auto.text) {
+    try {
+      await channel.send({ content: auto.text });
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+// ============================================================
 // ========== الأزرار الملكية ==========
 // ============================================================
 
 const BTN = {
-  MAIN: ButtonStyle.Danger,      // 🔴 أحمر ملكي
-  ALT: ButtonStyle.Secondary,    // ⚫ رمادي فاخر
+  MAIN: ButtonStyle.Danger,
+  ALT: ButtonStyle.Secondary,
 };
 
 // ============================================================
@@ -1068,7 +1093,6 @@ async function generateWelcomeImage(member, memberCount, background = null) {
   ctx.closePath();
   ctx.stroke();
 
-  // إطار ذهبي داخلي
   ctx.strokeStyle = 'rgba(212,175,55,0.4)';
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -1101,7 +1125,6 @@ async function generateWelcomeImage(member, memberCount, background = null) {
     ctx.strokeStyle = THEME.ORANGE_HEX;
     ctx.lineWidth = 6;
     ctx.stroke();
-    // إطار ذهبي خارجي
     ctx.beginPath();
     ctx.arc(centerX, centerY, radius + 14, 0, Math.PI * 2);
     ctx.strokeStyle = 'rgba(212,175,55,0.5)';
@@ -2369,6 +2392,7 @@ client.on('messageCreate', async (message) => {
           return;
         }
 
+        // ✅ تعديل: أمر التذاكر مع خيار العنوان الجديد
         if (sub === 'تذكرة') {
           const settings = await getTicketSettings(guildId);
           const action = args[1]?.toLowerCase();
@@ -2379,16 +2403,37 @@ client.on('messageCreate', async (message) => {
               .setTitle('⚙️ إدارة التذاكر')
               .setColor(THEME.ORANGE)
               .addFields(
-                { name: '➕ إضافة قسم', value: '`!تعيين تذكرة إضافة [الاسم] @دور :ايموجي:`' },
-                { name: '🎨 تعيين إيموجي', value: '`!تعيين تذكرة تعيين_ايموجي [الاسم] :ايموجي:`' },
-                { name: '➖ حذف قسم', value: '`!تعيين تذكرة حذف [الاسم]`' },
-                { name: '📝 تغيير النص', value: '`!تعيين تذكرة نص [النص]`' },
-                { name: '🖼️ تغيير الصورة', value: '`!تعيين تذكرة صورة [رابط]`' },
-                { name: '👀 عرض الأقسام', value: '`!عرض_تذكرة`' }
+                { name: '📝 تغيير العنوان', value: '`!تعيين تذكرة عنوان [العنوان الجديد]`', inline: false },
+                { name: '➕ إضافة قسم', value: '`!تعيين تذكرة إضافة [الاسم] @دور :ايموجي:`', inline: false },
+                { name: '🎨 تعيين إيموجي', value: '`!تعيين تذكرة تعيين_ايموجي [الاسم] :ايموجي:`', inline: false },
+                { name: '➖ حذف قسم', value: '`!تعيين تذكرة حذف [الاسم]`', inline: false },
+                { name: '📝 تغيير النص', value: '`!تعيين تذكرة نص [النص]`', inline: false },
+                { name: '🖼️ تغيير الصورة', value: '`!تعيين تذكرة صورة [رابط]`', inline: false },
+                { name: '👀 عرض الأقسام', value: '`!عرض_تذكرة`', inline: false }
               )
               .setFooter({ text: 'KINGDOM • TICKETS' });
             if (generalImage) embed.setImage(generalImage);
             sentReply = await message.channel.send({ embeds: [embed] });
+            deleteAfter(sentReply);
+            return;
+          }
+
+          // ✅ جديد: خيار تغيير العنوان
+          if (action === 'عنوان') {
+            if (!actionValue) {
+              sentReply = await message.reply('⚠️ الصيغة: `!تعيين تذكرة عنوان [العنوان الجديد]`');
+              deleteAfter(sentReply);
+              return;
+            }
+            settings.panelTitle = actionValue;
+            await saveTicketSettings(guildId, settings);
+            sentReply = await message.reply(`✅ تم تغيير عنوان بانل التذاكر إلى:\n**${actionValue}**`);
+            logToChannel(guildId, {
+              title: '🎫 تغيير عنوان التذاكر',
+              color: THEME.ORANGE,
+              description: `**المنفذ:** ${message.author}\n**العنوان الجديد:** ${actionValue}`,
+              footer: 'TICKETS'
+            });
             deleteAfter(sentReply);
             return;
           }
@@ -2535,7 +2580,7 @@ client.on('messageCreate', async (message) => {
         return;
       }
 
-      // ========== بانل التذاكر ==========
+      // ✅ تعديل: بانل التذاكر يستخدم العنوان من قاعدة البيانات
       if (cmd === 'بانل') {
         if (!(await hasPermission(message.member, guildId))) {
           sentReply = await message.reply('❌ تحتاج صلاحية متحكم.');
@@ -2545,7 +2590,7 @@ client.on('messageCreate', async (message) => {
         const settings = await getTicketSettings(guildId);
         const imageUrl = settings.image || null;
         const embed = new EmbedBuilder()
-          .setTitle('🎫 KINGDOM | مركز الدعم الملكي')
+          .setTitle(settings.panelTitle || '🎫 KINGDOM | مركز الدعم الملكي')
           .setDescription(settings.text)
           .setColor(THEME.ORANGE)
           .setFooter({ text: 'KINGDOM • SUPPORT CENTER' });
@@ -2589,7 +2634,7 @@ client.on('messageCreate', async (message) => {
       if (cmd === 'عرض_تذكرة') {
         const settings = await getTicketSettings(guildId);
         const embed = new EmbedBuilder().setTitle('📋 إعدادات التذاكر').setColor(THEME.ORANGE)
-          .setDescription(`**النص:** ${settings.text}`)
+          .setDescription(`**العنوان:** ${settings.panelTitle || '🎫 KINGDOM | مركز الدعم الملكي'}\n**النص:** ${settings.text}`)
           .addFields(
             { name: '📌 الأقسام', value: settings.sections.map((s, i) => `${i+1}. ${s.emoji || '📌'} **${s.name}** ${s.roleId ? `<@&${s.roleId}>` : '(بدون دور)'}`).join('\n') || 'لا يوجد أقسام', inline: false },
             { name: '🖼️ الصورة', value: settings.image ? `[رابط](${settings.image})` : 'لا توجد صورة', inline: true },
@@ -3311,39 +3356,23 @@ client.on('messageCreate', async (message) => {
           await levelChannel.send({ content: `${message.author}`, embeds: [embed] }).catch(() => {});
         }
 
-        // الأوتو لاين في الروم الأصلي
+        // ✅ الأوتو لاين في الروم الأصلي (صورة فقط)
         const originalAutoLine = await AutoLine.findOne({ guildId, channelId: message.channel.id });
-        if (originalAutoLine && originalAutoLine.enabled && (originalAutoLine.text || originalAutoLine.image)) {
+        if (originalAutoLine && originalAutoLine.enabled) {
           try {
-            if (originalAutoLine.text && originalAutoLine.image) {
-              const alEmbed = new EmbedBuilder().setDescription(originalAutoLine.text).setColor(THEME.ORANGE).setImage(originalAutoLine.image).setTimestamp();
-              await message.channel.send({ embeds: [alEmbed] });
-            } else if (originalAutoLine.image) {
-              const alEmbed = new EmbedBuilder().setColor(THEME.ORANGE).setImage(originalAutoLine.image).setTimestamp();
-              await message.channel.send({ embeds: [alEmbed] });
-            } else if (originalAutoLine.text) {
-              await message.channel.send(originalAutoLine.text);
-            }
+            await sendAutoLineOnly(message.channel, originalAutoLine);
             levelUpSentAutoLine = true;
           } catch (e) {}
         }
 
-        // الأوتو لاين في روم الليفل
+        // ✅ الأوتو لاين في روم الليفل (صورة فقط)
         if (levelChannelId !== message.channel.id) {
           const levelAutoLine = await AutoLine.findOne({ guildId, channelId: levelChannelId });
-          if (levelAutoLine && levelAutoLine.enabled && (levelAutoLine.text || levelAutoLine.image)) {
+          if (levelAutoLine && levelAutoLine.enabled) {
             const lvlCh = message.guild.channels.cache.get(levelChannelId);
             if (lvlCh) {
               try {
-                if (levelAutoLine.text && levelAutoLine.image) {
-                  const alEmbed = new EmbedBuilder().setDescription(levelAutoLine.text).setColor(THEME.ORANGE).setImage(levelAutoLine.image).setTimestamp();
-                  await lvlCh.send({ embeds: [alEmbed] });
-                } else if (levelAutoLine.image) {
-                  const alEmbed = new EmbedBuilder().setColor(THEME.ORANGE).setImage(levelAutoLine.image).setTimestamp();
-                  await lvlCh.send({ embeds: [alEmbed] });
-                } else if (levelAutoLine.text) {
-                  await lvlCh.send(levelAutoLine.text);
-                }
+                await sendAutoLineOnly(lvlCh, levelAutoLine);
               } catch (e) {}
             }
           }
@@ -3362,21 +3391,14 @@ client.on('messageCreate', async (message) => {
       }
     }
 
+    // ✅ الأوتو لاين العادي (صورة فقط)
     if (!levelUpSentAutoLine) {
       const auto = await AutoLine.findOne({ guildId, channelId: message.channel.id });
-      if (auto && auto.enabled && (auto.text || auto.image)) {
+      if (auto && auto.enabled) {
         const channel = client.channels.cache.get(message.channel.id);
         if (channel) {
           try {
-            if (auto.text && auto.image) {
-              const embed = new EmbedBuilder().setDescription(auto.text).setColor(THEME.ORANGE).setImage(auto.image).setTimestamp();
-              await channel.send({ embeds: [embed] });
-            } else if (auto.image) {
-              const embed = new EmbedBuilder().setColor(THEME.ORANGE).setImage(auto.image).setTimestamp();
-              await channel.send({ embeds: [embed] });
-            } else if (auto.text) {
-              await channel.send(auto.text);
-            }
+            await sendAutoLineOnly(channel, auto);
           } catch (e) {}
         }
         return;
@@ -4157,6 +4179,22 @@ client.on('interactionCreate', async (interaction) => {
       return await interaction.showModal(modal);
     }
 
+    // ✅ معالج زر "إرسال زاجل" الجديد (في رسالة الزاجل نفسها)
+    if (interaction.isButton() && interaction.customId.startsWith('pigeon_send_again_')) {
+      const modal = new ModalBuilder()
+        .setCustomId('pigeon_send_modal')
+        .setTitle('إرسال رسالة زاجل')
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder().setCustomId('pigeon_target').setLabel('اسم المستخدم (بدون @)').setStyle(TextInputStyle.Short).setRequired(true).setMinLength(2).setMaxLength(50).setPlaceholder('مثال: ahmed_2001')
+          ),
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder().setCustomId('pigeon_message').setLabel('نص الرسالة').setStyle(TextInputStyle.Paragraph).setRequired(true).setMinLength(1).setMaxLength(1500)
+          )
+        );
+      return await interaction.showModal(modal);
+    }
+
     if (interaction.isModalSubmit() && interaction.customId === 'pigeon_send_modal') {
       await interaction.deferReply({ ephemeral: true });
       const targetQuery = interaction.fields.getTextInputValue('pigeon_target');
@@ -4187,8 +4225,18 @@ client.on('interactionCreate', async (interaction) => {
         .setFooter({ text: 'KINGDOM • PRIVATE MAIL' });
       if (config.pigeonImage) pigeonEmbed.setImage(config.pigeonImage);
 
+      // ✅ إضافة زر "إرسال زاجل" بجانب زر "قراءة زاجل"
       const readRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`pigeon_read_${target.id}`).setLabel('قراءة زاجل').setStyle(BTN.MAIN).setEmoji('🕊️')
+        new ButtonBuilder()
+          .setCustomId(`pigeon_read_${target.id}`)
+          .setLabel('قراءة زاجل')
+          .setStyle(BTN.MAIN)
+          .setEmoji('🕊️'),
+        new ButtonBuilder()
+          .setCustomId(`pigeon_send_again_${interaction.user.id}`)
+          .setLabel('إرسال زاجل جديد')
+          .setStyle(BTN.ALT)
+          .setEmoji('📤')
       );
 
       let sentMsg;

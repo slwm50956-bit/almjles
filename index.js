@@ -138,7 +138,6 @@ const WarnSchema = new mongoose.Schema({
 });
 const Warn = mongoose.model('Warn', WarnSchema);
 
-// ✅ مع فئة التكت
 const TicketSettingsSchema = new mongoose.Schema({
   guildId: { type: String, unique: true, required: true },
   sections: [{
@@ -149,7 +148,7 @@ const TicketSettingsSchema = new mongoose.Schema({
   panelTitle: { type: String, default: '🎫 مركز الدعم' },
   text: { type: String, default: 'مرحباً بكم في مركز الدعم، لفتح تذكرة اختر القسم من القائمة أدناه.' },
   image: { type: String, default: null },
-  categoryId: { type: String, default: null }, // ✅ فئة التكت
+  categoryId: { type: String, default: null },
 });
 const TicketSettings = mongoose.model('TicketSettings', TicketSettingsSchema);
 
@@ -320,7 +319,6 @@ async function updateGuildConfig(guildId, data) {
   await Config.findOneAndUpdate({ guildId }, data, { upsert: true, new: true });
 }
 
-// ✅ اسم السيرفر المخصص
 function getServerBrand(config, guild) {
   return config?.serverName || guild?.name || 'Server';
 }
@@ -343,7 +341,6 @@ async function getTicketSettings(guildId) {
   return settings;
 }
 
-// ✅ تحديث الدالة لحفظ categoryId
 async function saveTicketSettings(guildId, data) {
   await TicketSettings.findOneAndUpdate({ guildId }, {
     sections: data.sections,
@@ -577,7 +574,7 @@ async function applyProtectionAction(interactionOrMessage, member, guildId, conf
 }
 
 // ============================================================
-// ========== ✅ دالة إرسال الأوتو لاين (صورة فقط) ==========
+// ========== ✅ الأوتو لاين (صورة فقط) ==========
 // ============================================================
 
 async function sendAutoLineOnly(channel, auto) {
@@ -630,7 +627,6 @@ function parseEmoji(emoji) {
   return null;
 }
 
-// ✅ يتحقق إذا البوت يقدر يوصل للإيموجي المخصص
 async function isEmojiAccessible(emoji, client) {
   const parsed = parseEmoji(emoji);
   if (!parsed) return false;
@@ -644,7 +640,6 @@ async function isEmojiAccessible(emoji, client) {
   }
 }
 
-// ✅ يحضّر الإيموجي للاستخدام في القوائم (يرجع 🎭 إذا غير متاح)
 async function prepareEmojiForSelect(emoji, client) {
   const accessible = await isEmojiAccessible(emoji, client);
   if (!accessible) return '🎭';
@@ -715,26 +710,10 @@ async function buildProtectionPanel(guildId, guild) {
   );
 
   const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('prot_banned_words')
-      .setLabel('الكلمات')
-      .setStyle(BTN.ALT)
-      .setEmoji('🚫'),
-    new ButtonBuilder()
-      .setCustomId('prot_action')
-      .setLabel('الإجراءات')
-      .setStyle(BTN.ALT)
-      .setEmoji('⚖️'),
-    new ButtonBuilder()
-      .setCustomId('prot_bypass_roles')
-      .setLabel('الاستثناءات')
-      .setStyle(BTN.ALT)
-      .setEmoji('🎭'),
-    new ButtonBuilder()
-      .setCustomId('prot_settings')
-      .setLabel('الإعدادات')
-      .setStyle(BTN.ALT)
-      .setEmoji('⚙️'),
+    new ButtonBuilder().setCustomId('prot_banned_words').setLabel('الكلمات').setStyle(BTN.ALT).setEmoji('🚫'),
+    new ButtonBuilder().setCustomId('prot_action').setLabel('الإجراءات').setStyle(BTN.ALT).setEmoji('⚖️'),
+    new ButtonBuilder().setCustomId('prot_bypass_roles').setLabel('الاستثناءات').setStyle(BTN.ALT).setEmoji('🎭'),
+    new ButtonBuilder().setCustomId('prot_settings').setLabel('الإعدادات').setStyle(BTN.ALT).setEmoji('⚙️'),
   );
 
   return { embed, rows: [row1, row2] };
@@ -794,7 +773,6 @@ async function updateSelfRole(guildId, roleId, data) {
   return await SelfRole.findOneAndUpdate({ guildId, roleId }, data, { new: true });
 }
 
-// ✅ بانل الرتب — يستخدم الاسم المخصص + إيموجي محضّر
 async function buildSelfRolesPanel(guildId, guild, config) {
   const selfRoles = await getSelfRoles(guildId);
   if (!selfRoles.length) return null;
@@ -813,7 +791,6 @@ async function buildSelfRolesPanel(guildId, guild, config) {
   if (panelImage) embed.setImage(panelImage);
   else if (generalImage) embed.setThumbnail(generalImage);
 
-  // ✅ تحضير الإيموجي لكل رتبة (نتحقق من إمكانية الوصول)
   const options = [];
   const rolesToShow = selfRoles.slice(0, 24);
 
@@ -1450,42 +1427,220 @@ client.on('messageCreate', async (message) => {
     };
 
     try {
-      // ========== المساعدة ==========
+      // ============================================================
+      // ========== ✅ !مساعدة (مضبوطة ومرتبة) ==========
+      // ============================================================
       if (cmd === 'مساعدة') {
         const embed = new EmbedBuilder()
           .setTitle(`📖 ${brand} | دليل الأوامر`)
           .setDescription(
-            '`كل أدوات السيرفر بين يديك.`\n' +
-            'استخدم البادئة `!` قبل أي أمر.\n\n' +
-            '> أوامر الإدارة والإعدادات تحتاج صلاحية متحكم.'
+            '**كل أدوات السيرفر بين يديك** 👑\n\n' +
+            '`!` ← البادئة قبل كل أمر\n' +
+            '> أوامر الإعدادات تحتاج صلاحية **متحكم**'
           )
           .setColor(THEME.ORANGE)
+          .setThumbnail(message.guild.iconURL() || null)
           .addFields(
-            { name: '👑 نظام التحكم', value: '`متحكم @شخص` `الغاء_متحكم @شخص` `قائمة_المتحكمين`', inline: false },
-            { name: '🛡️ الإدارة', value: '`حظر` `طرد` `كتم` `فك_كتم` `تحذير` `ابطال_تحذيرات` `مسح` `قفل` `فتح`', inline: false },
-            { name: '🎭 إدارة الرتب', value: '`اعطاء_رتبة` `سحب_رتبة` `عرض_رتب` `اصلاح_رتب`', inline: false },
-            { name: '📁 إدارة القنوات', value: '`انشاء_قناة` `حذف_قناة` `تغيير_اسم_قناة`', inline: false },
-            { name: '🔊 إدارة الصوت', value: '`نقل_كل`', inline: false },
-            { name: '📌 إدارة الرسائل', value: '`تثبيت` `الغاء_تثبيت` `قول` `ايمبد` `اعلان`', inline: false },
-            { name: '📊 المستويات', value: '`مستوى` `ترتيب` `تعيين روم_ليفل #قناة`', inline: false },
-            { name: '👋 الترحيب', value: '`تعيين ترحيب #قناة` `تعيين رسالة_ترحيب` `تعيين صورة_ترحيب` `تعيين عنوان_ترحيب` `تعيين خلفية_ترحيب`', inline: false },
-            { name: '📋 اللوق', value: '`تعيين سجلات #قناة` `اختبار_لوق`', inline: false },
-            { name: '🤖 الأوتو لاين', value: '`تعيين اوتر_لاين` `تعيين صورة_اوترلاين` `تعيين تفعيل_اوترلاين` `تعيين تعطيل_اوترلاين` `تعيين حذف_اوترلاين`', inline: false },
-            { name: '💬 الردود التلقائية', value: '`رد_تلقائي` `رد_تلقائي_صورة` `حذف_رد_تلقائي` `عرض_الردود`', inline: false },
-            { name: '💡 الاقتراحات', value: '`تعيين روم_اقتراحات #روم`', inline: false },
-            { name: '🎫 التذاكر', value: '`بانل` `عرض_تذكرة` `تعيين تذكرة` `تعيين تكت_لوق #روم` `تعيين فئة_تكت #كاتقوري`', inline: false },
-            { name: '⭐ التقييمات', value: '`تقييمات`', inline: false },
-            { name: '🎭 الرتب الذاتية', value: '`تعيين رتب`', inline: false },
-            { name: '🕊️ الحمام الزاجل', value: '`بانل_زاجل` | `تعيين روم_زاجل #روم`', inline: false },
-            { name: '📋 التقديمات', value: '`بانل_تقديم` | `تعيين_تقديمات` | `نتيجة`', inline: false },
-            { name: '🛡️ الحماية', value: '`حماية`', inline: false },
-            { name: '✏️ تغيير الاسم', value: '`تغيير_اسم`', inline: false },
-            { name: 'ℹ️ معلومات', value: '`معلومات` `سيرفر` `بينق`', inline: false },
-            { name: '⚙️ إعدادات', value: '`تعيين` (للمتحكمين)', inline: false },
-            { name: '📸 إنستغرام', value: '`ig رابط_الريلز`', inline: false },
-            { name: '🏷️ اسم السيرفر', value: '`تعيين اسم_السيرفر [الاسم]`', inline: false }
+            {
+              name: '━━━ 👑 نظام التحكم ━━━',
+              value:
+                '> `متحكم @شخص` — تعيين متحكم\n' +
+                '> `الغاء_متحكم @شخص` — إلغاء متحكم\n' +
+                '> `قائمة_المتحكمين` — عرض المتحكمين\n' +
+                '> `اصلاح_رتب` — إصلاح الرتب الذاتية *(للمالك)*',
+              inline: false,
+            },
+            {
+              name: '━━━ 🛡️ الإشراف ━━━',
+              value:
+                '> `حظر @شخص [سبب]`\n' +
+                '> `طرد @شخص [سبب]`\n' +
+                '> `كتم @شخص [سبب]`\n' +
+                '> `فك_كتم @شخص`\n' +
+                '> `تحذير @شخص [سبب]`\n' +
+                '> `ابطال_تحذيرات @شخص`\n' +
+                '> `مسح [عدد]`\n' +
+                '> `قفل` — قفل القناة\n' +
+                '> `فتح` — فتح القناة',
+              inline: false,
+            },
+            {
+              name: '━━━ 🎭 إدارة الرتب ━━━',
+              value:
+                '> `اعطاء_رتبة @شخص @رتبة`\n' +
+                '> `سحب_رتبة @شخص @رتبة`\n' +
+                '> `عرض_رتب [@شخص]`',
+              inline: false,
+            },
+            {
+              name: '━━━ 📁 إدارة القنوات ━━━',
+              value:
+                '> `انشاء_قناة [اسم]`\n' +
+                '> `حذف_قناة #قناة`\n' +
+                '> `تغيير_اسم_قناة #قناة [اسم]`',
+              inline: false,
+            },
+            {
+              name: '━━━ 🔊 إدارة الصوت ━━━',
+              value: '> `نقل_كل #من #إلى` — نقل الأعضاء',
+              inline: false,
+            },
+            {
+              name: '━━━ 📌 إدارة الرسائل ━━━',
+              value:
+                '> `تثبيت [آيدي]`\n' +
+                '> `الغاء_تثبيت [آيدي]`\n' +
+                '> `قول [نص]`\n' +
+                '> `ايمبد [عنوان] ، [وصف]`\n' +
+                '> `اعلان [نص]`\n' +
+                '> `اعلان here [نص]`',
+              inline: false,
+            },
+            {
+              name: '━━━ 📊 المستويات ━━━',
+              value:
+                '> `مستوى [@شخص]` — عرض المستوى\n' +
+                '> `ترتيب` — أعلى 10 أعضاء',
+              inline: false,
+            },
+            {
+              name: '━━━ 👋 الترحيب ━━━',
+              value:
+                '> `تعيين ترحيب #قناة`\n' +
+                '> `تعيين رسالة_ترحيب [نص]`\n' +
+                '> `تعيين صورة_ترحيب [رابط]`\n' +
+                '> `تعيين عنوان_ترحيب [نص]`\n' +
+                '> `تعيين خلفية_ترحيب [لون/رابط]`\n' +
+                '> `تعيين دور_دخول @دور`',
+              inline: false,
+            },
+            {
+              name: '━━━ 📋 اللوق ━━━',
+              value:
+                '> `تعيين سجلات #قناة`\n' +
+                '> `اختبار_لوق` — اختبار',
+              inline: false,
+            },
+            {
+              name: '━━━ 🤖 الأوتو لاين ━━━',
+              value:
+                '> `تعيين اوتر_لاين #روم [نص]`\n' +
+                '> `تعيين صورة_اوترلاين #روم [رابط]`\n' +
+                '> `تعيين تفعيل_اوترلاين #روم`\n' +
+                '> `تعيين تعطيل_اوترلاين #روم`\n' +
+                '> `تعيين حذف_اوترلاين #روم`',
+              inline: false,
+            },
+            {
+              name: '━━━ 💬 الردود التلقائية ━━━',
+              value:
+                '> `رد_تلقائي [كلمة] [رد]`\n' +
+                '> `رد_تلقائي_صورة [كلمة] [رد] [رابط]`\n' +
+                '> `حذف_رد_تلقائي [كلمة]`\n' +
+                '> `عرض_الردود`',
+              inline: false,
+            },
+            {
+              name: '━━━ 💡 الاقتراحات ━━━',
+              value: '> `تعيين روم_اقتراحات #روم`',
+              inline: false,
+            },
+            {
+              name: '━━━ 🎫 التذاكر ━━━',
+              value:
+                '> `بانل` — إنشاء لوحة التذاكر\n' +
+                '> `عرض_تذكرة` — عرض الإعدادات\n' +
+                '> `تعيين تذكرة عنوان [عنوان]`\n' +
+                '> `تعيين تذكرة إضافة [اسم] @رتبة :إيموجي:`\n' +
+                '> `تعيين تذكرة تعيين_ايموجي [اسم] :إيموجي:`\n' +
+                '> `تعيين تذكرة حذف [اسم]`\n' +
+                '> `تعيين تذكرة نص [نص]`\n' +
+                '> `تعيين تذكرة صورة [رابط]`\n' +
+                '> `تعيين تكت_لوق #روم`\n' +
+                '> `تعيين فئة_تكت #كاتقوري`',
+              inline: false,
+            },
+            {
+              name: '━━━ ⭐ التقييمات ━━━',
+              value:
+                '> `تقييمات` — عرض التقييمات\n' +
+                '> `تعيين تقييم [on/off]`\n' +
+                '> `تعيين قناة_تقييم #قناة`',
+              inline: false,
+            },
+            {
+              name: '━━━ 🎭 الرتب الذاتية ━━━',
+              value: '> `تعيين رتب` — لوحة إدارة الرتب',
+              inline: false,
+            },
+            {
+              name: '━━━ 🕊️ الحمام الزاجل ━━━',
+              value:
+                '> `بانل_زاجل` — إنشاء البانل\n' +
+                '> `تعيين روم_زاجل #روم`\n' +
+                '> `تعيين عنوان_زاجل [نص]`\n' +
+                '> `تعيين نص_زاجل [نص]`\n' +
+                '> `تعيين صورة_زاجل [رابط]`',
+              inline: false,
+            },
+            {
+              name: '━━━ 📋 التقديمات ━━━',
+              value:
+                '> `بانل_تقديم` — إنشاء البانل\n' +
+                '> `تعيين_تقديمات` — لوحة الإدارة\n' +
+                '> `نتيجة @عضو [قسم] [قبول/رفض]`\n' +
+                '> `تعيين تقديم بانل_عنوان [نص]`\n' +
+                '> `تعيين تقديم بانل_وصف [نص]`\n' +
+                '> `تعيين تقديم بانل_صورة [رابط]`\n' +
+                '> `تعيين تقديم بانل_روم #روم`\n' +
+                '> `تعيين تقديم لوق_نتائج #روم`',
+              inline: false,
+            },
+            {
+              name: '━━━ 🛡️ الحماية ━━━',
+              value: '> `حماية` — لوحة تحكم كاملة',
+              inline: false,
+            },
+            {
+              name: '━━━ ✏️ الاسم ━━━',
+              value: '> `تغيير_اسم` — تغيير اسمك',
+              inline: false,
+            },
+            {
+              name: '━━━ ℹ️ المعلومات ━━━',
+              value:
+                '> `معلومات [@شخص]`\n' +
+                '> `سيرفر` — معلومات السيرفر\n' +
+                '> `بينق` — اختبار الاتصال',
+              inline: false,
+            },
+            {
+              name: '━━━ 🏷️ اسم السيرفر ━━━',
+              value: '> `تعيين اسم_السيرفر [الاسم]` — تغيير اسم السيرفر في كل الإيمبدات',
+              inline: false,
+            },
+            {
+              name: '━━━ 🖼️ الصور العامة ━━━',
+              value:
+                '> `تعيين صورة_بنر [رابط]`\n' +
+                '> `تعيين صورة_عامة [رابط]`\n' +
+                '> `تعيين صورة_بانل [رابط]`\n' +
+                '> `تعيين صورة_رتب [رابط]`',
+              inline: false,
+            },
+            {
+              name: '━━━ 📸 إنستغرام ━━━',
+              value: '> `ig [رابط]` — تحميل الريلز',
+              inline: false,
+            },
+            {
+              name: '━━━ 🛑 المالك ━━━',
+              value: '> `إيقاف` — إيقاف البوت',
+              inline: false,
+            }
           )
-          .setFooter({ text: brand });
+          .setFooter({ text: `${brand} • البادئة !` });
+
         if (generalImage) embed.setImage(generalImage);
         await message.channel.send({ embeds: [embed] });
         return;
@@ -1759,7 +1914,9 @@ client.on('messageCreate', async (message) => {
         return;
       }
 
-      // ========== تعيين ==========
+      // ============================================================
+      // ========== ✅ !تعيين (مضبوطة ومرتبة) ==========
+      // ============================================================
       if (cmd === 'تعيين') {
         if (!(await hasPermission(message.member, guildId))) {
           sentReply = await message.reply('❌ تحتاج صلاحية متحكم.');
@@ -1770,34 +1927,120 @@ client.on('messageCreate', async (message) => {
         const sub = args[0]?.toLowerCase();
         const value = args.slice(1).join(' ');
 
+        // ========== قائمة الإعدادات الرئيسية ==========
         if (!sub) {
           const embed = new EmbedBuilder()
             .setTitle(`⚙️ ${brand} | مركز الإعدادات`)
-            .setDescription('الصيغة: `!تعيين [الخيار] [القيمة]`')
-            .setColor(THEME.ORANGE)
-            .addFields(
-              { name: '🏷️ اسم السيرفر', value: '`اسم_السيرفر [الاسم]`', inline: false },
-              { name: '👋 الترحيب', value: '`ترحيب #قناة`، `رسالة_ترحيب`، `صورة_ترحيب`، `عنوان_ترحيب`، `خلفية_ترحيب`', inline: false },
-              { name: '📋 اللوق', value: '`سجلات #قناة`', inline: false },
-              { name: '📊 المستويات', value: '`روم_ليفل #قناة`', inline: false },
-              { name: '🤖 الأوتو لاين', value: '`اوتر_لاين`، `صورة_اوترلاين`، `تفعيل_اوترلاين`، `تعطيل_اوترلاين`، `حذف_اوترلاين`', inline: false },
-              { name: '🎫 التذاكر', value: '`تذكرة`، `تكت_لوق #روم`، `فئة_تكت #كاتقوري`', inline: false },
-              { name: '🎭 الرتب الذاتية', value: '`رتب`', inline: false },
-              { name: '⭐ التقييمات', value: '`تقييم [on/off]`، `قناة_تقييم`', inline: false },
-              { name: '🕊️ الحمام الزاجل', value: '`روم_زاجل`، `عنوان_زاجل`، `نص_زاجل`، `صورة_زاجل`', inline: false },
-              { name: '📋 التقديمات', value: '`تقديم بانل_عنوان`، `تقديم بانل_وصف`، `تقديم بانل_صورة`، `تقديم بانل_روم`، `تقديم لوق_نتائج`', inline: false },
-              { name: '💡 الاقتراحات', value: '`روم_اقتراحات #روم`', inline: false },
-              { name: '🖼️ عام', value: '`صورة_بنر`، `صورة_عامة`، `صورة_بانل`، `صورة_رتب`', inline: false },
-              { name: '🚪 دور الدخول', value: '`دور_دخول @دور`', inline: false }
+            .setDescription(
+              '**كل الإعدادات في مكان واحد** 👑\n\n' +
+              '`الصيغة:` `!تعيين [الخيار] [القيمة]`\n' +
+              '> أوامر الإعدادات تحتاج صلاحية **متحكم**'
             )
-            .setFooter({ text: brand });
+            .setColor(THEME.ORANGE)
+            .setThumbnail(message.guild.iconURL() || null)
+            .addFields(
+              {
+                name: '━━━ 🏷️ اسم السيرفر ━━━',
+                value:
+                  '> `اسم_السيرفر [الاسم]` — تغيير اسم السيرفر\n' +
+                  '> `اسم_السيرفر` — إلغاء الاسم المخصص',
+                inline: false,
+              },
+              {
+                name: '━━━ 👋 الترحيب ━━━',
+                value:
+                  '> `ترحيب #قناة` — قناة الترحيب\n' +
+                  '> `رسالة_ترحيب [نص]` — نص الرسالة\n' +
+                  '> `عنوان_ترحيب [نص]` — العنوان\n' +
+                  '> `صورة_ترحيب [رابط]` — الصورة\n' +
+                  '> `خلفية_ترحيب [لون/رابط]` — الخلفية\n' +
+                  '> `دور_دخول @دور` — الرتبة التلقائية',
+                inline: false,
+              },
+              {
+                name: '━━━ 📋 اللوق ━━━',
+                value: '> `سجلات #قناة` — قناة السجلات',
+                inline: false,
+              },
+              {
+                name: '━━━ 📊 المستويات ━━━',
+                value: '> `روم_ليفل #قناة` — قناة إشعارات الليفل',
+                inline: false,
+              },
+              {
+                name: '━━━ 🤖 الأوتو لاين ━━━',
+                value:
+                  '> `اوتر_لاين #روم [نص]` — تعيين النص\n' +
+                  '> `صورة_اوترلاين #روم [رابط]` — الصورة\n' +
+                  '> `تفعيل_اوترلاين #روم` — تفعيل\n' +
+                  '> `تعطيل_اوترلاين #روم` — تعطيل\n' +
+                  '> `حذف_اوترلاين #روم` — حذف',
+                inline: false,
+              },
+              {
+                name: '━━━ 🎫 التذاكر ━━━',
+                value:
+                  '> `تذكرة` — قائمة إدارة التذاكر\n' +
+                  '> `تكت_لوق #روم` — روم استلام التذاكر\n' +
+                  '> `فئة_تكت #كاتقوري` — فئة فتح التذاكر',
+                inline: false,
+              },
+              {
+                name: '━━━ 🎭 الرتب الذاتية ━━━',
+                value: '> `رتب` — قائمة إدارة الرتب الذاتية',
+                inline: false,
+              },
+              {
+                name: '━━━ ⭐ التقييمات ━━━',
+                value:
+                  '> `تقييم [on/off]` — تفعيل/تعطيل\n' +
+                  '> `قناة_تقييم #قناة` — قناة العرض',
+                inline: false,
+              },
+              {
+                name: '━━━ 🕊️ الحمام الزاجل ━━━',
+                value:
+                  '> `روم_زاجل #روم` — قناة الزاجل\n' +
+                  '> `عنوان_زاجل [نص]` — العنوان\n' +
+                  '> `نص_زاجل [نص]` — الوصف\n' +
+                  '> `صورة_زاجل [رابط]` — الصورة',
+                inline: false,
+              },
+              {
+                name: '━━━ 📋 التقديمات ━━━',
+                value:
+                  '> `تقديم` — قائمة إعدادات التقديمات\n' +
+                  '> `تقديم بانل_عنوان [نص]`\n' +
+                  '> `تقديم بانل_وصف [نص]`\n' +
+                  '> `تقديم بانل_صورة [رابط]`\n' +
+                  '> `تقديم بانل_روم #روم`\n' +
+                  '> `تقديم لوق_نتائج #روم`',
+                inline: false,
+              },
+              {
+                name: '━━━ 💡 الاقتراحات ━━━',
+                value: '> `روم_اقتراحات #روم` — روم الاقتراحات',
+                inline: false,
+              },
+              {
+                name: '━━━ 🖼️ الصور العامة ━━━',
+                value:
+                  '> `صورة_بنر [رابط]` — صورة البنر\n' +
+                  '> `صورة_عامة [رابط]` — الصورة العامة\n' +
+                  '> `صورة_بانل [رابط]` — صورة بانل التذاكر\n' +
+                  '> `صورة_رتب [رابط]` — صورة بانل الرتب',
+                inline: false,
+              }
+            )
+            .setFooter({ text: `${brand} • SETTINGS HUB` });
+
           if (generalImage) embed.setImage(generalImage);
           sentReply = await message.channel.send({ embeds: [embed] });
           deleteAfter(sentReply);
           return;
         }
 
-        // ✅ اسم السيرفر
+        // ========== اسم السيرفر ==========
         if (sub === 'اسم_السيرفر') {
           if (!value) {
             await updateGuildConfig(guildId, { serverName: null });
@@ -1821,14 +2064,14 @@ client.on('messageCreate', async (message) => {
           return;
         }
 
-        // ✅ فئة التكت
+        // ========== فئة التكت ==========
         if (sub === 'فئة_تكت') {
           const category = message.mentions.channels.first();
           if (!category) {
             const settings = await getTicketSettings(guildId);
             settings.categoryId = null;
             await saveTicketSettings(guildId, settings);
-            sentReply = await message.reply('✅ تم إلغاء فئة التكت. سيتم إنشاء التذاكر خارج أي فئة.');
+            sentReply = await message.reply('✅ تم إلغاء فئة التكت.');
             deleteAfter(sentReply);
             return;
           }
@@ -1850,7 +2093,7 @@ client.on('messageCreate', async (message) => {
           return;
         }
 
-        // روم الاقتراحات
+        // ========== روم الاقتراحات ==========
         if (sub === 'روم_اقتراحات') {
           const channel = message.mentions.channels.first();
           if (!channel) {
@@ -1865,7 +2108,7 @@ client.on('messageCreate', async (message) => {
           return;
         }
 
-        // تكت لوق
+        // ========== تكت لوق ==========
         if (sub === 'تكت_لوق' || sub === 'تيكت_لوق') {
           const channel = message.mentions.channels.first();
           if (!channel) {
@@ -1880,10 +2123,28 @@ client.on('messageCreate', async (message) => {
           return;
         }
 
-        // التقديمات
+        // ========== التقديمات ==========
         if (sub === 'تقديم') {
           const option = args[1]?.toLowerCase();
           const optionValue = args.slice(2).join(' ');
+
+          if (!option) {
+            const embed = new EmbedBuilder()
+              .setTitle('📋 إعدادات التقديمات')
+              .setColor(THEME.ORANGE)
+              .addFields(
+                { name: '📝 العنوان', value: '`تقديم بانل_عنوان [نص]`', inline: false },
+                { name: '📄 الوصف', value: '`تقديم بانل_وصف [نص]`', inline: false },
+                { name: '🖼️ الصورة', value: '`تقديم بانل_صورة [رابط]`', inline: false },
+                { name: '📢 الروم', value: '`تقديم بانل_روم #روم`', inline: false },
+                { name: '📥 روم النتائج', value: '`تقديم لوق_نتائج #روم`', inline: false }
+              )
+              .setFooter({ text: brand });
+            if (generalImage) embed.setImage(generalImage);
+            sentReply = await message.channel.send({ embeds: [embed] });
+            deleteAfter(sentReply);
+            return;
+          }
 
           if (option === 'بانل_عنوان') {
             if (!optionValue) { sentReply = await message.reply('⚠️ أدخل العنوان.'); deleteAfter(sentReply); return; }
@@ -1947,7 +2208,7 @@ client.on('messageCreate', async (message) => {
           return;
         }
 
-        // الزاجل
+        // ========== الزاجل ==========
         if (sub === 'روم_زاجل') {
           const channel = message.mentions.channels.first();
           if (!channel) {
@@ -1991,7 +2252,7 @@ client.on('messageCreate', async (message) => {
           return;
         }
 
-        // الرتب الذاتية
+        // ========== الرتب الذاتية ==========
         if (sub === 'رتب') {
           const action = args[1]?.toLowerCase();
           const rest = args.slice(2);
@@ -2006,9 +2267,9 @@ client.on('messageCreate', async (message) => {
               : 'لا توجد رتب مسجلة بعد.';
 
             const embed = new EmbedBuilder()
-              .setTitle(`🎭 ${brand} | إدارة الرتب`)
+              .setTitle(`🎭 ${brand} | إدارة الرتب الذاتية`)
               .setColor(THEME.ORANGE)
-              .setDescription('نظام يسمح للأعضاء باختيار رتبهم بأنفسهم.')
+              .setDescription('نظام يسمح للأعضاء باختيار رتبهم بأنفسهم من قائمة منسدلة.')
               .addFields(
                 { name: '➕ إضافة رتبة', value: '`!تعيين رتب اضافة @رتبة [الاسم] [الايموجي] [رابط_صورة]`', inline: false },
                 { name: '✏️ تعديل رتبة', value: '`!تعيين رتب تعديل @رتبة [الاسم/الايموجي/الصورة/الوصف] [القيمة]`', inline: false },
@@ -2020,7 +2281,7 @@ client.on('messageCreate', async (message) => {
                 { name: '🔢 ترتيب رتبة', value: '`!تعيين رتب ترتيب @رتبة [رقم]`', inline: false },
                 { name: '📌 الرتب المسجلة', value: listText.slice(0, 1024), inline: false }
               )
-              .setFooter({ text: brand });
+              .setFooter({ text: `${brand} • ${selfRoles.length} رتبة مسجلة` });
             if (generalImage) embed.setImage(generalImage);
             sentReply = await message.channel.send({ embeds: [embed] });
             deleteAfter(sentReply);
@@ -2180,7 +2441,7 @@ client.on('messageCreate', async (message) => {
           return;
         }
 
-        // الترحيب
+        // ========== الترحيب ==========
         if (sub === 'ترحيب') {
           const channel = message.mentions.channels.first();
           if (!channel) {
@@ -2389,7 +2650,7 @@ client.on('messageCreate', async (message) => {
           return;
         }
 
-        // التذاكر
+        // ========== التذاكر ==========
         if (sub === 'تذكرة') {
           const settings = await getTicketSettings(guildId);
           const action = args[1]?.toLowerCase();
@@ -2397,7 +2658,7 @@ client.on('messageCreate', async (message) => {
 
           if (!action) {
             const embed = new EmbedBuilder()
-              .setTitle('⚙️ إدارة التذاكر')
+              .setTitle('🎫 إدارة التذاكر')
               .setColor(THEME.ORANGE)
               .addFields(
                 { name: '📝 تغيير العنوان', value: '`!تعيين تذكرة عنوان [العنوان الجديد]`', inline: false },
@@ -2406,6 +2667,7 @@ client.on('messageCreate', async (message) => {
                 { name: '➖ حذف قسم', value: '`!تعيين تذكرة حذف [الاسم]`', inline: false },
                 { name: '📝 تغيير النص', value: '`!تعيين تذكرة نص [النص]`', inline: false },
                 { name: '🖼️ تغيير الصورة', value: '`!تعيين تذكرة صورة [رابط]`', inline: false },
+                { name: '📂 الفئة', value: '`!تعيين فئة_تكت #كاتقوري`', inline: false },
                 { name: '👀 عرض الأقسام', value: '`!عرض_تذكرة`', inline: false }
               )
               .setFooter({ text: brand });
@@ -2424,11 +2686,6 @@ client.on('messageCreate', async (message) => {
             settings.panelTitle = actionValue;
             await saveTicketSettings(guildId, settings);
             sentReply = await message.reply(`✅ تم تغيير العنوان إلى:\n**${actionValue}**`);
-            logToChannel(guildId, {
-              title: '🎫 تغيير عنوان التذاكر',
-              color: THEME.ORANGE,
-              description: `**${message.author}** • العنوان: ${actionValue}`,
-            });
             deleteAfter(sentReply);
             return;
           }
@@ -4625,7 +4882,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ============================================================
-    // ========== قائمة التذاكر (مع فئة التكت) ==========
+    // ========== قائمة التذاكر ==========
     // ============================================================
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_menu') {
       await interaction.deferReply({ ephemeral: true });
@@ -4672,7 +4929,6 @@ client.on('interactionCreate', async (interaction) => {
 
       const ticketName = sanitizeChannelName(`تذكرة-${member.user.username}`);
       try {
-        // ✅ استخدام فئة التكت إذا محددة
         const parentId = settings.categoryId || null;
 
         const channel = await guild.channels.create({

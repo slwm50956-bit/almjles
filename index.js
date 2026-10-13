@@ -71,7 +71,7 @@ mongoose.connect(MONGO_URL)
 
 const ConfigSchema = new mongoose.Schema({
   guildId: { type: String, unique: true, required: true },
-  serverName: { type: String, default: null }, // ✅ اسم السيرفر المخصص
+  serverName: { type: String, default: null },
   logChannel: String,
   welcomeChannel: String,
   welcomeMessage: { type: String, default: 'أهلاً بك في السيرفر! 🎉' },
@@ -138,6 +138,7 @@ const WarnSchema = new mongoose.Schema({
 });
 const Warn = mongoose.model('Warn', WarnSchema);
 
+// ✅ مع فئة التكت
 const TicketSettingsSchema = new mongoose.Schema({
   guildId: { type: String, unique: true, required: true },
   sections: [{
@@ -148,6 +149,7 @@ const TicketSettingsSchema = new mongoose.Schema({
   panelTitle: { type: String, default: '🎫 مركز الدعم' },
   text: { type: String, default: 'مرحباً بكم في مركز الدعم، لفتح تذكرة اختر القسم من القائمة أدناه.' },
   image: { type: String, default: null },
+  categoryId: { type: String, default: null }, // ✅ فئة التكت
 });
 const TicketSettings = mongoose.model('TicketSettings', TicketSettingsSchema);
 
@@ -318,7 +320,7 @@ async function updateGuildConfig(guildId, data) {
   await Config.findOneAndUpdate({ guildId }, data, { upsert: true, new: true });
 }
 
-// ✅ دالة الحصول على اسم السيرفر المخصص (أو اسم السيرفر الأصلي)
+// ✅ اسم السيرفر المخصص
 function getServerBrand(config, guild) {
   return config?.serverName || guild?.name || 'Server';
 }
@@ -341,8 +343,15 @@ async function getTicketSettings(guildId) {
   return settings;
 }
 
+// ✅ تحديث الدالة لحفظ categoryId
 async function saveTicketSettings(guildId, data) {
-  await TicketSettings.findOneAndUpdate({ guildId }, data, { upsert: true });
+  await TicketSettings.findOneAndUpdate({ guildId }, {
+    sections: data.sections,
+    panelTitle: data.panelTitle,
+    text: data.text,
+    image: data.image,
+    categoryId: data.categoryId || null,
+  }, { upsert: true });
 }
 
 async function getTicketByChannel(guildId, channelId) {
@@ -593,6 +602,57 @@ async function sendAutoLineOnly(channel, auto) {
 }
 
 // ============================================================
+// ========== ✅ دوال الإيموجي ==========
+// ============================================================
+
+function isValidEmoji(emoji) {
+  if (!emoji || typeof emoji !== 'string') return false;
+  if (/^<a?:\w{2,32}:\d{17,20}>$/.test(emoji)) return true;
+  try {
+    const emojiRegex = /^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Extended_Pictographic})(\u200D(\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Extended_Pictographic}))*$/u;
+    return emojiRegex.test(emoji) && emoji.length <= 8;
+  } catch (e) {
+    return false;
+  }
+}
+
+function parseEmoji(emoji) {
+  if (!emoji || typeof emoji !== 'string') return null;
+  const customMatch = emoji.match(/^<(a?):(\w{2,32}):(\d{17,20})>$/);
+  if (customMatch) {
+    return {
+      animated: customMatch[1] === 'a',
+      name: customMatch[2],
+      id: customMatch[3],
+    };
+  }
+  if (isValidEmoji(emoji)) return emoji;
+  return null;
+}
+
+// ✅ يتحقق إذا البوت يقدر يوصل للإيموجي المخصص
+async function isEmojiAccessible(emoji, client) {
+  const parsed = parseEmoji(emoji);
+  if (!parsed) return false;
+  if (typeof parsed === 'string') return true;
+
+  try {
+    const fetched = await client.emojis.fetch(parsed.id).catch(() => null);
+    return !!fetched;
+  } catch (e) {
+    return false;
+  }
+}
+
+// ✅ يحضّر الإيموجي للاستخدام في القوائم (يرجع 🎭 إذا غير متاح)
+async function prepareEmojiForSelect(emoji, client) {
+  const accessible = await isEmojiAccessible(emoji, client);
+  if (!accessible) return '🎭';
+  const parsed = parseEmoji(emoji);
+  return parsed || '🎭';
+}
+
+// ============================================================
 // ========== الأزرار ==========
 // ============================================================
 
@@ -699,29 +759,6 @@ function buildTicketControlRow() {
 }
 
 // ============================================================
-// ========== دوال التحقق من الإيموجي ==========
-// ============================================================
-
-function isValidEmoji(emoji) {
-  if (!emoji || typeof emoji !== 'string') return false;
-  if (/^<a?:\w{2,32}:\d{17,20}>$/.test(emoji)) return true;
-  try {
-    const emojiRegex = /^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Extended_Pictographic})(\u200D(\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Extended_Pictographic}))*$/u;
-    return emojiRegex.test(emoji) && emoji.length <= 8;
-  } catch (e) {
-    return false;
-  }
-}
-
-function parseEmoji(emoji) {
-  if (!emoji || typeof emoji !== 'string') return null;
-  const customMatch = emoji.match(/^<a?:(\w{2,32}):(\d{17,20})>$/);
-  if (customMatch) return { name: customMatch[1], id: customMatch[2] };
-  if (isValidEmoji(emoji)) return emoji;
-  return null;
-}
-
-// ============================================================
 // ========== دوال الرتب الذاتية ==========
 // ============================================================
 
@@ -757,6 +794,7 @@ async function updateSelfRole(guildId, roleId, data) {
   return await SelfRole.findOneAndUpdate({ guildId, roleId }, data, { new: true });
 }
 
+// ✅ بانل الرتب — يستخدم الاسم المخصص + إيموجي محضّر
 async function buildSelfRolesPanel(guildId, guild, config) {
   const selfRoles = await getSelfRoles(guildId);
   if (!selfRoles.length) return null;
@@ -775,14 +813,20 @@ async function buildSelfRolesPanel(guildId, guild, config) {
   if (panelImage) embed.setImage(panelImage);
   else if (generalImage) embed.setThumbnail(generalImage);
 
-  const options = selfRoles.slice(0, 24).map(r => {
-    const opt = { label: r.label.slice(0, 100), value: r.roleId };
-    const parsedEmoji = parseEmoji(r.emoji);
-    if (parsedEmoji) opt.emoji = parsedEmoji;
-    else opt.emoji = '🎭';
+  // ✅ تحضير الإيموجي لكل رتبة (نتحقق من إمكانية الوصول)
+  const options = [];
+  const rolesToShow = selfRoles.slice(0, 24);
+
+  for (const r of rolesToShow) {
+    const opt = {
+      label: r.label.slice(0, 100),
+      value: r.roleId,
+    };
+    const preparedEmoji = await prepareEmojiForSelect(r.emoji, guild.client);
+    opt.emoji = preparedEmoji;
     if (r.description) opt.description = r.description.slice(0, 100);
-    return opt;
-  });
+    options.push(opt);
+  }
 
   options.push({
     label: 'إعادة تعيين القائمة',
@@ -845,18 +889,18 @@ async function buildApplyPanel(guildId, config, guild) {
     return { embed, row: null, empty: true };
   }
 
-  const options = sections.slice(0, 25).map(s => {
+  const options = [];
+  for (const s of sections.slice(0, 25)) {
     const opt = {
       label: s.name.slice(0, 100),
       value: s.name.slice(0, 100),
     };
-    const parsedEmoji = parseEmoji(s.emoji);
-    if (parsedEmoji) opt.emoji = parsedEmoji;
-    else opt.emoji = '📋';
+    const preparedEmoji = await prepareEmojiForSelect(s.emoji, guild.client);
+    opt.emoji = preparedEmoji;
     const qCount = s.questions?.length || 0;
     opt.description = `${qCount} سؤال${s.roleId ? ' • له رتبة' : ''}`.slice(0, 100);
-    return opt;
-  });
+    options.push(opt);
+  }
 
   options.push({
     label: 'إعادة تعيين القائمة',
@@ -1207,7 +1251,7 @@ client.on('messageDelete', async (message) => {
     logToChannel(message.guild.id, {
       title: '🗑️ حذف رسالة',
       color: THEME.BLACK,
-      description: `**المستخدم:** ${message.author?.tag || 'غير معروف'}\n**القناة:** ${message.channel.name}\n**المحتوى:** ${content || 'غير مرئي'}`,
+      description: `**${message.author?.tag || 'غير معروف'}** في **${message.channel.name}**\n**المحتوى:** ${content || 'غير مرئي'}`,
     });
   } catch (error) {}
 });
@@ -1227,10 +1271,10 @@ client.on('messageUpdate', async (oldMessage, newMessage) => {
     logToChannel(oldMessage.guild.id, {
       title: '✏️ تعديل رسالة',
       color: THEME.BLACK,
-      description: `**المستخدم:** ${oldMessage.author?.tag || 'غير معروف'}\n**القناة:** ${oldMessage.channel.name}`,
+      description: `**${oldMessage.author?.tag || 'غير معروف'}** في **${oldMessage.channel.name}**`,
       fields: [
-        { name: '📜 النص القديم', value: oldContent || 'فارغ', inline: false },
-        { name: '📝 النص الجديد', value: newContent || 'فارغ', inline: false },
+        { name: '📜 القديم', value: oldContent || 'فارغ', inline: false },
+        { name: '📝 الجديد', value: newContent || 'فارغ', inline: false },
       ],
     });
   } catch (error) {}
@@ -1374,7 +1418,7 @@ client.on('messageCreate', async (message) => {
           logToChannel(guildId, {
             title: '🛡️ مخالفة حماية',
             color: THEME.WARN,
-            description: `**العضو:** ${member.user.tag}\n**القناة:** ${message.channel}\n**السبب:** ${violationReason}\n**الإجراء:** ${config.protectionAction}\n**DM:** ${result.dmSent ? '✅' : '❌'}\n**كتم:** ${result.muted ? '✅' : '❌'}`,
+            description: `**${member.user.tag}** في ${message.channel}\n**السبب:** ${violationReason}\n**الإجراء:** ${config.protectionAction}\n**DM:** ${result.dmSent ? '✅' : '❌'}\n**كتم:** ${result.muted ? '✅' : '❌'}`,
           });
 
           return;
@@ -1429,7 +1473,7 @@ client.on('messageCreate', async (message) => {
             { name: '🤖 الأوتو لاين', value: '`تعيين اوتر_لاين` `تعيين صورة_اوترلاين` `تعيين تفعيل_اوترلاين` `تعيين تعطيل_اوترلاين` `تعيين حذف_اوترلاين`', inline: false },
             { name: '💬 الردود التلقائية', value: '`رد_تلقائي` `رد_تلقائي_صورة` `حذف_رد_تلقائي` `عرض_الردود`', inline: false },
             { name: '💡 الاقتراحات', value: '`تعيين روم_اقتراحات #روم`', inline: false },
-            { name: '🎫 التذاكر', value: '`بانل` `عرض_تذكرة` `تعيين تذكرة` `تعيين تكت_لوق #روم`', inline: false },
+            { name: '🎫 التذاكر', value: '`بانل` `عرض_تذكرة` `تعيين تذكرة` `تعيين تكت_لوق #روم` `تعيين فئة_تكت #كاتقوري`', inline: false },
             { name: '⭐ التقييمات', value: '`تقييمات`', inline: false },
             { name: '🎭 الرتب الذاتية', value: '`تعيين رتب`', inline: false },
             { name: '🕊️ الحمام الزاجل', value: '`بانل_زاجل` | `تعيين روم_زاجل #روم`', inline: false },
@@ -1510,17 +1554,17 @@ client.on('messageCreate', async (message) => {
           embed.addFields({ name: '📌 الأقسام الحالية', value: 'لا توجد أقسام بعد.', inline: false });
         }
 
-        const options = sections.slice(0, 24).map(s => {
+        const options = [];
+        for (const s of sections.slice(0, 24)) {
           const opt = {
             label: s.name.slice(0, 100),
             value: `section:${s.name}`.slice(0, 100),
             description: `${s.questions.length} سؤال${s.roleId ? ' • له رتبة' : ''}`.slice(0, 100),
           };
-          const parsedEmoji = parseEmoji(s.emoji);
-          if (parsedEmoji) opt.emoji = parsedEmoji;
-          else opt.emoji = '📋';
-          return opt;
-        });
+          const preparedEmoji = await prepareEmojiForSelect(s.emoji, client);
+          opt.emoji = preparedEmoji;
+          options.push(opt);
+        }
 
         options.push({
           label: '➕ إضافة قسم جديد',
@@ -1710,7 +1754,7 @@ client.on('messageCreate', async (message) => {
             valid++;
           }
         }
-        sentReply = await message.reply(`✅ تم إصلاح **${fixed}** رتبة. الرتب السليمة: **${valid}**.`);
+        sentReply = await message.reply(`✅ تم إصلاح **${fixed}** رتبة. السليمة: **${valid}**.`);
         deleteAfter(sentReply);
         return;
       }
@@ -1737,7 +1781,7 @@ client.on('messageCreate', async (message) => {
               { name: '📋 اللوق', value: '`سجلات #قناة`', inline: false },
               { name: '📊 المستويات', value: '`روم_ليفل #قناة`', inline: false },
               { name: '🤖 الأوتو لاين', value: '`اوتر_لاين`، `صورة_اوترلاين`، `تفعيل_اوترلاين`، `تعطيل_اوترلاين`، `حذف_اوترلاين`', inline: false },
-              { name: '🎫 التذاكر', value: '`تذكرة`، `تكت_لوق #روم`', inline: false },
+              { name: '🎫 التذاكر', value: '`تذكرة`، `تكت_لوق #روم`، `فئة_تكت #كاتقوري`', inline: false },
               { name: '🎭 الرتب الذاتية', value: '`رتب`', inline: false },
               { name: '⭐ التقييمات', value: '`تقييم [on/off]`، `قناة_تقييم`', inline: false },
               { name: '🕊️ الحمام الزاجل', value: '`روم_زاجل`، `عنوان_زاجل`، `نص_زاجل`، `صورة_زاجل`', inline: false },
@@ -1757,12 +1801,12 @@ client.on('messageCreate', async (message) => {
         if (sub === 'اسم_السيرفر') {
           if (!value) {
             await updateGuildConfig(guildId, { serverName: null });
-            sentReply = await message.reply(`✅ تم إلغاء الاسم المخصص. سيتم استخدام اسم السيرفر الأصلي: **${message.guild.name}**`);
+            sentReply = await message.reply(`✅ تم إلغاء الاسم المخصص. سيُستخدم: **${message.guild.name}**`);
             deleteAfter(sentReply);
             return;
           }
           if (value.length > 50) {
-            sentReply = await message.reply('⚠️ الاسم طويل جداً (الحد الأقصى 50 حرف).');
+            sentReply = await message.reply('⚠️ الاسم طويل جداً (الحد 50 حرف).');
             deleteAfter(sentReply);
             return;
           }
@@ -1771,7 +1815,36 @@ client.on('messageCreate', async (message) => {
           logToChannel(guildId, {
             title: '🏷️ تغيير اسم السيرفر',
             color: THEME.ORANGE,
-            description: `**المنفذ:** ${message.author}\n**الاسم الجديد:** ${value}`,
+            description: `**${message.author}** • الاسم الجديد: ${value}`,
+          });
+          deleteAfter(sentReply);
+          return;
+        }
+
+        // ✅ فئة التكت
+        if (sub === 'فئة_تكت') {
+          const category = message.mentions.channels.first();
+          if (!category) {
+            const settings = await getTicketSettings(guildId);
+            settings.categoryId = null;
+            await saveTicketSettings(guildId, settings);
+            sentReply = await message.reply('✅ تم إلغاء فئة التكت. سيتم إنشاء التذاكر خارج أي فئة.');
+            deleteAfter(sentReply);
+            return;
+          }
+          if (category.type !== ChannelType.GuildCategory) {
+            sentReply = await message.reply('⚠️ يجب أن تمنشن **كاتقوري** (فئة) وليس قناة عادية.');
+            deleteAfter(sentReply);
+            return;
+          }
+          const settings = await getTicketSettings(guildId);
+          settings.categoryId = category.id;
+          await saveTicketSettings(guildId, settings);
+          sentReply = await message.reply(`✅ تم تعيين فئة التكت إلى: **${category.name}**\n> سيتم فتح كل التذاكر الجديدة داخل هذه الفئة.`);
+          logToChannel(guildId, {
+            title: '🎫 تعيين فئة التكت',
+            color: THEME.ORANGE,
+            description: `**${message.author}** • الفئة: ${category.name}`,
           });
           deleteAfter(sentReply);
           return;
@@ -2354,7 +2427,7 @@ client.on('messageCreate', async (message) => {
             logToChannel(guildId, {
               title: '🎫 تغيير عنوان التذاكر',
               color: THEME.ORANGE,
-              description: `**${message.author}** • العنوان الجديد: ${actionValue}`,
+              description: `**${message.author}** • العنوان: ${actionValue}`,
             });
             deleteAfter(sentReply);
             return;
@@ -2512,13 +2585,13 @@ client.on('messageCreate', async (message) => {
         if (imageUrl) embed.setImage(imageUrl);
         if (generalImage) embed.setThumbnail(generalImage);
 
-        const options = settings.sections.map(s => {
+        const options = [];
+        for (const s of settings.sections) {
           const opt = { label: s.name, value: s.name };
-          const parsedEmoji = parseEmoji(s.emoji);
-          if (parsedEmoji) opt.emoji = parsedEmoji;
-          else opt.emoji = '📌';
-          return opt;
-        });
+          const preparedEmoji = await prepareEmojiForSelect(s.emoji, client);
+          opt.emoji = preparedEmoji;
+          options.push(opt);
+        }
         if (!options.length) {
           sentReply = await message.reply('⚠️ لا توجد أقسام.');
           deleteAfter(sentReply);
@@ -2547,10 +2620,12 @@ client.on('messageCreate', async (message) => {
       // ========== عرض التذكرة ==========
       if (cmd === 'عرض_تذكرة') {
         const settings = await getTicketSettings(guildId);
+        const category = settings.categoryId ? message.guild.channels.cache.get(settings.categoryId) : null;
         const embed = new EmbedBuilder().setTitle('📋 إعدادات التذاكر').setColor(THEME.ORANGE)
           .setDescription(`**العنوان:** ${settings.panelTitle}\n**النص:** ${settings.text}`)
           .addFields(
             { name: '📌 الأقسام', value: settings.sections.map((s, i) => `${i+1}. ${s.emoji || '📌'} **${s.name}** ${s.roleId ? `<@&${s.roleId}>` : '(بدون دور)'}`).join('\n') || 'لا يوجد أقسام', inline: false },
+            { name: '📂 فئة التكت', value: category ? category.toString() : '❌ غير محددة', inline: true },
             { name: '📥 روم استلام التذاكر', value: config.ticketLogChannel ? `<#${config.ticketLogChannel}>` : 'لم يتم التعيين', inline: true }
           )
           .setFooter({ text: brand });
@@ -2587,7 +2662,7 @@ client.on('messageCreate', async (message) => {
         }
 
         let desc = `**📊 متوسط التقييم:** ${avg}/5 ⭐\n`;
-        desc += `**📈 إجمالي التقييمات:** ${allRatings.length}\n\n`;
+        desc += `**📈 إجمالي:** ${allRatings.length}\n\n`;
         desc += `**توزيع التقييمات:**\n`;
         for (let i = 5; i >= 1; i--) {
           const count = distribution[i];
@@ -2601,7 +2676,7 @@ client.on('messageCreate', async (message) => {
           const user = await client.users.fetch(r.userId).catch(() => null);
           const name = user ? user.username : `مستخدم`;
           desc += `**${name}** - ${stars}${r.rating ? ` (${r.rating}/5)` : ''}\n`;
-          if (r.section) desc += `> 📌 القسم: ${r.section}\n`;
+          if (r.section) desc += `> 📌 ${r.section}\n`;
           if (r.comment) desc += `> 💬 ${r.comment}\n`;
           desc += `\n`;
         }
@@ -3493,7 +3568,7 @@ client.on('interactionCreate', async (interaction) => {
         .setCustomId('prot_bypass_add_modal')
         .setTitle('إضافة رتبة مستثناة')
         .addComponents(new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('role_input').setLabel('آيدي الرتبة').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(25).setPlaceholder('مثال: 123456789012345678')
+          new TextInputBuilder().setCustomId('role_input').setLabel('آيدي الرتبة').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(25).setPlaceholder('123456789012345678')
         ));
       return await interaction.showModal(modal);
     }
@@ -3709,17 +3784,17 @@ client.on('interactionCreate', async (interaction) => {
         embed.addFields({ name: '📌 الأقسام الحالية', value: secList.slice(0, 1024), inline: false });
       }
 
-      const options = sections.slice(0, 24).map(s => {
+      const options = [];
+      for (const s of sections.slice(0, 24)) {
         const opt = {
           label: s.name.slice(0, 100),
           value: `section:${s.name}`.slice(0, 100),
           description: `${s.questions.length} سؤال${s.roleId ? ' • له رتبة' : ''}`.slice(0, 100),
         };
-        const parsedEmoji = parseEmoji(s.emoji);
-        if (parsedEmoji) opt.emoji = parsedEmoji;
-        else opt.emoji = '📋';
-        return opt;
-      });
+        const preparedEmoji = await prepareEmojiForSelect(s.emoji, client);
+        opt.emoji = preparedEmoji;
+        options.push(opt);
+      }
       options.push({ label: 'إضافة قسم جديد', value: 'apply_add_section', emoji: '➕', description: 'إضافة قسم تقديم جديد' });
 
       const selectRow = new ActionRowBuilder().addComponents(
@@ -4018,7 +4093,7 @@ client.on('interactionCreate', async (interaction) => {
         .setTitle('إرسال رسالة زاجل')
         .addComponents(
           new ActionRowBuilder().addComponents(
-            new TextInputBuilder().setCustomId('pigeon_target').setLabel('اسم المستخدم (بدون @)').setStyle(TextInputStyle.Short).setRequired(true).setMinLength(2).setMaxLength(50).setPlaceholder('مثال: ahmed_2001')
+            new TextInputBuilder().setCustomId('pigeon_target').setLabel('اسم المستخدم (بدون @)').setStyle(TextInputStyle.Short).setRequired(true).setMinLength(2).setMaxLength(50).setPlaceholder('ahmed_2001')
           ),
           new ActionRowBuilder().addComponents(
             new TextInputBuilder().setCustomId('pigeon_message').setLabel('نص الرسالة').setStyle(TextInputStyle.Paragraph).setRequired(true).setMinLength(1).setMaxLength(1500)
@@ -4033,7 +4108,7 @@ client.on('interactionCreate', async (interaction) => {
         .setTitle('إرسال رسالة زاجل')
         .addComponents(
           new ActionRowBuilder().addComponents(
-            new TextInputBuilder().setCustomId('pigeon_target').setLabel('اسم المستخدم (بدون @)').setStyle(TextInputStyle.Short).setRequired(true).setMinLength(2).setMaxLength(50).setPlaceholder('مثال: ahmed_2001')
+            new TextInputBuilder().setCustomId('pigeon_target').setLabel('اسم المستخدم (بدون @)').setStyle(TextInputStyle.Short).setRequired(true).setMinLength(2).setMaxLength(50).setPlaceholder('ahmed_2001')
           ),
           new ActionRowBuilder().addComponents(
             new TextInputBuilder().setCustomId('pigeon_message').setLabel('نص الرسالة').setStyle(TextInputStyle.Paragraph).setRequired(true).setMinLength(1).setMaxLength(1500)
@@ -4550,7 +4625,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ============================================================
-    // ========== قائمة التذاكر ==========
+    // ========== قائمة التذاكر (مع فئة التكت) ==========
     // ============================================================
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_menu') {
       await interaction.deferReply({ ephemeral: true });
@@ -4559,13 +4634,13 @@ client.on('interactionCreate', async (interaction) => {
       if (selected === 'TICKET_RESET') {
         try {
           const settings = await getTicketSettings(interaction.guild.id);
-          const options = settings.sections.map(s => {
+          const options = [];
+          for (const s of settings.sections) {
             const opt = { label: s.name, value: s.name };
-            const parsedEmoji = parseEmoji(s.emoji);
-            if (parsedEmoji) opt.emoji = parsedEmoji;
-            else opt.emoji = '📌';
-            return opt;
-          });
+            const preparedEmoji = await prepareEmojiForSelect(s.emoji, client);
+            opt.emoji = preparedEmoji;
+            options.push(opt);
+          }
           options.push({ label: 'إعادة تعيين', value: 'TICKET_RESET', emoji: '🔄' });
 
           const row = new ActionRowBuilder().addComponents(
@@ -4597,8 +4672,13 @@ client.on('interactionCreate', async (interaction) => {
 
       const ticketName = sanitizeChannelName(`تذكرة-${member.user.username}`);
       try {
+        // ✅ استخدام فئة التكت إذا محددة
+        const parentId = settings.categoryId || null;
+
         const channel = await guild.channels.create({
-          name: ticketName, type: ChannelType.GuildText, parent: null,
+          name: ticketName,
+          type: ChannelType.GuildText,
+          parent: parentId,
           permissionOverwrites: [
             { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
             { id: member.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },

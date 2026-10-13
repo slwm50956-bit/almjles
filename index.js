@@ -1,5 +1,5 @@
 // ============================================================
-// KINGDOM BOT — ROYAL CRIMSON EDITION v3
+// KINGDOM BOT — ROYAL CRIMSON EDITION v3 + VOICE MASTER
 // Discord.js v14 • MongoDB • CommonJS
 // ============================================================
 
@@ -107,7 +107,6 @@ const ConfigSchema = new mongoose.Schema({
   antiLinkEnabled: { type: Boolean, default: false },
   antiEveryoneEnabled: { type: Boolean, default: false },
 
-  // ✅ عقاب منفصل لكل مخالفة + مدة Timeout مستقلة (بالدقائق)
   protectionActionSpam: { type: String, enum: ['delete', 'delete_warn', 'delete_mute', 'delete_warn_mute'], default: 'delete_warn' },
   protectionTimeoutSpam: { type: Number, default: 10 },
 
@@ -120,13 +119,18 @@ const ConfigSchema = new mongoose.Schema({
   protectionActionWord: { type: String, enum: ['delete', 'delete_warn', 'delete_mute', 'delete_warn_mute'], default: 'delete_warn' },
   protectionTimeoutWord: { type: Number, default: 10 },
 
-  // الحقل القديم (للتوافق)
   protectionAction: { type: String, enum: ['delete', 'delete_warn', 'delete_mute', 'delete_warn_mute'], default: 'delete_warn' },
 
   protectionBypassRoles: [String],
   suggestionsChannel: String,
+
+  // ✅ Voice Master
+  voiceCreatorChannelId: { type: String, default: null },
+  voiceCategoryId: { type: String, default: null },
+  voicePanelChannelId: { type: String, default: null },
 }, { timestamps: true });
 const Config = mongoose.model('Config', ConfigSchema);
+
 const BannedWordSchema = new mongoose.Schema({
   guildId: { type: String, required: true },
   word: { type: String, required: true },
@@ -318,6 +322,27 @@ const SuggestionSchema = new mongoose.Schema({
 });
 SuggestionSchema.index({ guildId: 1, createdAt: -1 });
 const Suggestion = mongoose.model('Suggestion', SuggestionSchema);
+
+// ============================================================
+// ========== ✅ VoiceRoom Schema ==========
+// ============================================================
+
+const VoiceRoomSchema = new mongoose.Schema({
+  guildId: { type: String, required: true },
+  channelId: { type: String, required: true, unique: true },
+  ownerId: { type: String, required: true },
+  panelMessageId: { type: String, default: null },
+  panelChannelId: { type: String, default: null },
+  locked: { type: Boolean, default: false },
+  userLimit: { type: Number, default: 0 },
+  trustedUsers: { type: [String], default: [] },
+  blockedUsers: { type: [String], default: [] },
+  createdAt: { type: Date, default: Date.now },
+});
+VoiceRoomSchema.index({ guildId: 1, channelId: 1 }, { unique: true });
+VoiceRoomSchema.index({ guildId: 1, ownerId: 1 });
+const VoiceRoom = mongoose.model('VoiceRoom', VoiceRoomSchema);
+
 // ============================================================
 // ========== دوال مساعدة ==========
 // ============================================================
@@ -591,11 +616,10 @@ async function prepareEmojiForSelect(emoji, client) {
 }
 
 // ============================================================
-// ========== ✅ إجراء الحماية (مع عقاب منفصل لكل مخالفة) ==========
+// ========== ✅ إجراء الحماية ==========
 // ============================================================
 
 async function applyProtectionAction(message, member, guildId, config, violationType, reason) {
-  // تحديد الحقل الصحيح حسب نوع المخالفة
   let actionField, timeoutField;
   switch (violationType) {
     case 'spam':
@@ -624,13 +648,11 @@ async function applyProtectionAction(message, member, guildId, config, violation
   const guild = member.guild;
   const brand = getServerBrand(config, guild);
 
-  // ✅ حذف الرسالة دائماً
   await message.delete().catch(() => {});
 
   let dmSent = false;
   let muted = false;
 
-  // 📩 DM
   if (action === 'delete_warn' || action === 'delete_warn_mute') {
     try {
       const dmEmbed = new EmbedBuilder()
@@ -643,7 +665,6 @@ async function applyProtectionAction(message, member, guildId, config, violation
     } catch (e) {}
   }
 
-  // 🔇 Timeout بالمدة المخصصة
   if (action === 'delete_mute' || action === 'delete_warn_mute') {
     try {
       const m = await guild.members.fetch(member.id).catch(() => null);
@@ -659,7 +680,7 @@ async function applyProtectionAction(message, member, guildId, config, violation
 }
 
 // ============================================================
-// ========== ✅ الأوتو لاين (صورة فقط) ==========
+// ========== ✅ الأوتو لاين ==========
 // ============================================================
 
 async function sendAutoLineOnly(channel, auto) {
@@ -681,6 +702,196 @@ async function sendAutoLineOnly(channel, auto) {
     }
   }
   return false;
+}
+
+// ============================================================
+// ========== ✅ دوال Voice Master ==========
+// ============================================================
+
+async function createVoiceRoom(guild, member, config) {
+  try {
+    const category = config.voiceCategoryId
+      ? guild.channels.cache.get(config.voiceCategoryId)
+      : null;
+
+    const channelName = `🔊 ${member.displayName || member.user.username}`;
+
+    const voiceChannel = await guild.channels.create({
+      name: channelName,
+      type: ChannelType.GuildVoice,
+      parent: category || null,
+      permissionOverwrites: [
+        {
+          id: guild.id,
+          allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect],
+        },
+        {
+          id: member.id,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.Connect,
+            PermissionsBitField.Flags.ManageChannels,
+            PermissionsBitField.Flags.MoveMembers,
+            PermissionsBitField.Flags.MuteMembers,
+            PermissionsBitField.Flags.DeafenMembers,
+          ],
+        },
+        {
+          id: guild.client.user.id,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.Connect,
+            PermissionsBitField.Flags.ManageChannels,
+            PermissionsBitField.Flags.MoveMembers,
+          ],
+        },
+      ],
+      reason: `Voice Master • ${member.user.tag}`,
+    });
+
+    await member.voice.setChannel(voiceChannel).catch(() => {});
+
+    const voiceRoomData = await VoiceRoom.create({
+      guildId: guild.id,
+      channelId: voiceChannel.id,
+      ownerId: member.id,
+    });
+
+    // إرسال اللوحة
+    const panelChannel = config.voicePanelChannelId
+      ? guild.channels.cache.get(config.voicePanelChannelId)
+      : null;
+
+    if (panelChannel && panelChannel.isTextBased()) {
+      const panel = buildVoicePanel(voiceRoomData, voiceChannel, config, guild);
+
+      try {
+        const panelMsg = await panelChannel.send({
+          embeds: [panel.embed],
+          components: panel.rows,
+        });
+
+        voiceRoomData.panelMessageId = panelMsg.id;
+        voiceRoomData.panelChannelId = panelChannel.id;
+        await voiceRoomData.save();
+      } catch (err) {
+        console.error('❌ فشل إرسال لوحة الصوت:', err);
+      }
+    }
+
+    return voiceChannel;
+  } catch (err) {
+    console.error('❌ خطأ في إنشاء الروم الصوتي:', err);
+    return null;
+  }
+}
+
+function buildVoicePanel(voiceData, voiceChannel, config, guild) {
+  const brand = getServerBrand(config, guild);
+  const ownerMember = guild.members.cache.get(voiceData.ownerId);
+  const ownerName = ownerMember ? ownerMember.user.tag : 'غير معروف';
+
+  const embed = new EmbedBuilder()
+    .setTitle(`🎙️ لوحة التحكم • ${voiceChannel.name}`)
+    .setDescription(
+      `**👑 المالك:** <@${voiceData.ownerId}>\n` +
+      `**👥 الحد الأقصى:** ${voiceData.userLimit === 0 ? 'بلا حد' : voiceData.userLimit}\n` +
+      `**🔒 الحالة:** ${voiceData.locked ? 'مقفل' : 'مفتوح'}\n` +
+      `**✅ المسموح لهم:** ${voiceData.trustedUsers.length}\n` +
+      `**⛔ الممنوعون:** ${voiceData.blockedUsers.length}\n\n` +
+      `> ⚠️ **للتحكم بالروم، لازم تكون داخل الروم الصوتي.**`
+    )
+    .setColor(THEME.ORANGE)
+    .setFooter({ text: brand });
+
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('vc_rename').setLabel('تغيير الاسم').setStyle(BTN.MAIN).setEmoji('✏️'),
+    new ButtonBuilder().setCustomId('vc_limit').setLabel('تغيير الحد').setStyle(BTN.MAIN).setEmoji('👥'),
+    new ButtonBuilder().setCustomId('vc_lock').setLabel('قفل').setStyle(BTN.MAIN).setEmoji('🔒'),
+    new ButtonBuilder().setCustomId('vc_unlock').setLabel('فتح').setStyle(BTN.MAIN).setEmoji('🔓'),
+  );
+
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('vc_permit').setLabel('السماح لعضو').setStyle(BTN.ALT).setEmoji('👤'),
+    new ButtonBuilder().setCustomId('vc_reject').setLabel('منع عضو').setStyle(BTN.ALT).setEmoji('⛔'),
+    new ButtonBuilder().setCustomId('vc_unblock').setLabel('إلغاء المنع').setStyle(BTN.ALT).setEmoji('✅'),
+    new ButtonBuilder().setCustomId('vc_kick').setLabel('طرد').setStyle(BTN.ALT).setEmoji('👢'),
+  );
+
+  const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('vc_transfer').setLabel('نقل الملكية').setStyle(BTN.ALT).setEmoji('👑'),
+    new ButtonBuilder().setCustomId('vc_claim').setLabel('استلام الروم').setStyle(BTN.ALT).setEmoji('📌'),
+    new ButtonBuilder().setCustomId('vc_delete').setLabel('حذف الروم').setStyle(BTN.MAIN).setEmoji('❌'),
+  );
+
+  return { embed, rows: [row1, row2, row3] };
+}
+
+async function deleteVoiceRoom(guild, channelId) {
+  try {
+    const voiceData = await VoiceRoom.findOne({ guildId: guild.id, channelId });
+    const channel = guild.channels.cache.get(channelId);
+
+    if (voiceData && voiceData.panelMessageId && voiceData.panelChannelId) {
+      const panelCh = guild.channels.cache.get(voiceData.panelChannelId);
+      if (panelCh) {
+        try {
+          const panelMsg = await panelCh.messages.fetch(voiceData.panelMessageId).catch(() => null);
+          if (panelMsg) await panelMsg.delete().catch(() => {});
+        } catch (e) {}
+      }
+    }
+
+    await VoiceRoom.deleteOne({ guildId: guild.id, channelId });
+
+    if (channel) {
+      await channel.delete('Voice Master • Owner left').catch(() => {});
+    }
+  } catch (err) {
+    console.error('❌ خطأ في حذف الروم الصوتي:', err);
+  }
+}
+
+async function getVoiceRoomForMember(interaction) {
+  try {
+    const memberVoice = interaction.member?.voice?.channel;
+    if (!memberVoice) return null;
+
+    const voiceData = await VoiceRoom.findOne({
+      guildId: interaction.guild.id,
+      channelId: memberVoice.id,
+    });
+
+    return voiceData;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function updateVoicePanel(client, voiceData) {
+  try {
+    if (!voiceData.panelMessageId || !voiceData.panelChannelId) return;
+    const guild = client.guilds.cache.get(voiceData.guildId);
+    if (!guild) return;
+
+    const panelChannel = guild.channels.cache.get(voiceData.panelChannelId);
+    if (!panelChannel) return;
+
+    const voiceChannel = guild.channels.cache.get(voiceData.channelId);
+    if (!voiceChannel) return;
+
+    const config = await getGuildConfig(guild.id);
+    const panel = buildVoicePanel(voiceData, voiceChannel, config, guild);
+
+    try {
+      const msg = await panelChannel.messages.fetch(voiceData.panelMessageId).catch(() => null);
+      if (msg) {
+        await msg.edit({ embeds: [panel.embed], components: panel.rows }).catch(() => {});
+      }
+    } catch (e) {}
+  } catch (error) {
+    console.error('❌ خطأ في تحديث لوحة الصوت:', error);
+  }
 }
 
 // ============================================================
@@ -730,22 +941,10 @@ async function buildProtectionPanel(guildId, guild) {
     .setFooter({ text: brand });
 
   const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('prot_toggle_main')
-      .setLabel(config.protectionEnabled ? '🛑 تعطيل' : '⚔️ تفعيل')
-      .setStyle(BTN.MAIN),
-    new ButtonBuilder()
-      .setCustomId('prot_toggle_spam')
-      .setLabel(config.antiSpamEnabled ? '🔁 إيقاف' : '🔁 تفعيل')
-      .setStyle(BTN.MAIN),
-    new ButtonBuilder()
-      .setCustomId('prot_toggle_link')
-      .setLabel(config.antiLinkEnabled ? '🔗 إيقاف' : '🔗 تفعيل')
-      .setStyle(BTN.MAIN),
-    new ButtonBuilder()
-      .setCustomId('prot_toggle_everyone')
-      .setLabel(config.antiEveryoneEnabled ? '📢 إيقاف' : '📢 تفعيل')
-      .setStyle(BTN.MAIN),
+    new ButtonBuilder().setCustomId('prot_toggle_main').setLabel(config.protectionEnabled ? '🛑 تعطيل' : '⚔️ تفعيل').setStyle(BTN.MAIN),
+    new ButtonBuilder().setCustomId('prot_toggle_spam').setLabel(config.antiSpamEnabled ? '🔁 إيقاف' : '🔁 تفعيل').setStyle(BTN.MAIN),
+    new ButtonBuilder().setCustomId('prot_toggle_link').setLabel(config.antiLinkEnabled ? '🔗 إيقاف' : '🔗 تفعيل').setStyle(BTN.MAIN),
+    new ButtonBuilder().setCustomId('prot_toggle_everyone').setLabel(config.antiEveryoneEnabled ? '📢 إيقاف' : '📢 تفعيل').setStyle(BTN.MAIN),
   );
 
   const row2 = new ActionRowBuilder().addComponents(
@@ -757,10 +956,6 @@ async function buildProtectionPanel(guildId, guild) {
 
   return { embed, rows: [row1, row2] };
 }
-
-// ============================================================
-// ========== لوحة العقابات المخصصة ==========
-// ============================================================
 
 async function buildProtectionActionsPanel(guildId, guild) {
   const config = await getGuildConfig(guildId);
@@ -799,10 +994,6 @@ async function buildProtectionActionsPanel(guildId, guild) {
   return { embed, rows: [row, row2] };
 }
 
-// ============================================================
-// ========== قائمة التحكم في التذكرة ==========
-// ============================================================
-
 function buildTicketControlRow() {
   const menu = new StringSelectMenuBuilder()
     .setCustomId('ticket_control')
@@ -816,10 +1007,6 @@ function buildTicketControlRow() {
     ]);
   return new ActionRowBuilder().addComponents(menu);
 }
-
-// ============================================================
-// ========== دوال الرتب الذاتية ==========
-// ============================================================
 
 async function getSelfRoles(guildId) {
   return await SelfRole.find({ guildId }).sort({ order: 1, createdAt: 1 });
@@ -1057,7 +1244,6 @@ client.once('ready', () => {
   if (OWNER_ID) console.log(`👑 المالك: ${OWNER_ID}`);
   client.user.setActivity('The Kingdom Never Falls.', { type: ActivityType.Watching });
 });
-
 // ============================================================
 // ========== نظام اللوق ==========
 // ============================================================
@@ -1345,6 +1531,54 @@ function isAdminCommand(cmd) {
   ];
   return adminCmds.includes(cmd);
 }
+
+// ============================================================
+// ========== 🎙️ Voice State Update ==========
+// ============================================================
+
+client.on('voiceStateUpdate', async (oldState, newState) => {
+  const guild = newState.guild || oldState.guild;
+  if (!guild) return;
+
+  try {
+    const config = await getGuildConfig(guild.id);
+    if (!config.voiceCreatorChannelId) return;
+
+    const member = newState.member || oldState.member;
+    if (!member || member.user.bot) return;
+
+    // ===== دخول قناة الصانع =====
+    if (newState.channelId === config.voiceCreatorChannelId) {
+      const existing = await VoiceRoom.findOne({ guildId: guild.id, ownerId: member.id });
+      if (existing) {
+        const existingCh = guild.channels.cache.get(existing.channelId);
+        if (existingCh) {
+          await member.voice.setChannel(existingCh).catch(() => {});
+          return;
+        } else {
+          await VoiceRoom.deleteOne({ guildId: guild.id, ownerId: member.id });
+        }
+      }
+
+      await createVoiceRoom(guild, member, config);
+      return;
+    }
+
+    // ===== خروج من روم صوتي مؤقت =====
+    if (oldState.channelId && oldState.channelId !== newState.channelId) {
+      const voiceData = await VoiceRoom.findOne({ guildId: guild.id, channelId: oldState.channelId });
+      if (voiceData) {
+        const oldChannel = guild.channels.cache.get(oldState.channelId);
+        if (oldChannel && oldChannel.members.size === 0) {
+          await deleteVoiceRoom(guild, oldState.channelId);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('❌ خطأ في voiceStateUpdate:', error);
+  }
+});
+
 // ============================================================
 // ========== المعالج الرئيسي لـ messageCreate ==========
 // ============================================================
@@ -1422,7 +1656,7 @@ client.on('messageCreate', async (message) => {
   }
 
   // ============================================================
-  // ========== نظام الحماية (مع عقاب منفصل لكل مخالفة) ==========
+  // ========== نظام الحماية ==========
   // ============================================================
   if (!isCommand && config.protectionEnabled) {
     try {
@@ -1439,7 +1673,7 @@ client.on('messageCreate', async (message) => {
 
       if (!isExempt && !hasBypassRole && !isAdmin) {
         let violationReason = null;
-        let violationType = null; // ✅ نوع المخالفة
+        let violationType = null;
 
         if (config.antiLinkEnabled && containsLink(message.content)) {
           violationReason = 'إرسال روابط ممنوعة';
@@ -1470,7 +1704,6 @@ client.on('messageCreate', async (message) => {
         }
 
         if (violationReason && violationType) {
-          // ✅ تطبيق العقاب الخاص بهذا النوع
           const result = await applyProtectionAction(message, member, guildId, config, violationType, violationReason);
 
           try {
@@ -1514,7 +1747,7 @@ client.on('messageCreate', async (message) => {
 
     try {
       // ============================================================
-      // ========== ✅ !مساعدة ==========
+      // ========== !مساعدة ==========
       // ============================================================
       if (cmd === 'مساعدة') {
         const embed = new EmbedBuilder()
@@ -1534,6 +1767,15 @@ client.on('messageCreate', async (message) => {
                 '> `الغاء_متحكم @شخص` — إلغاء متحكم\n' +
                 '> `قائمة_المتحكمين` — عرض المتحكمين\n' +
                 '> `اصلاح_رتب` — إصلاح الرتب الذاتية *(للمالك)*',
+              inline: false,
+            },
+            {
+              name: '━━━ 🎙️ الرومات الصوتية ━━━',
+              value:
+                '> `voice` / `صوت` — إرسال لوحة التحكم الصوتية\n' +
+                '> `تعيين قناة_الصانع #قناة` — قناة الصانع\n' +
+                '> `تعيين كاتقوري_صوتي #كاتقوري` — كاتقوري الرومات\n' +
+                '> `تعيين روم_لوحة_صوت #قناة` — روم اللوحة',
               inline: false,
             },
             {
@@ -1696,6 +1938,81 @@ client.on('messageCreate', async (message) => {
 
         if (generalImage) embed.setImage(generalImage);
         await message.channel.send({ embeds: [embed] });
+        return;
+      }
+
+      // ============================================================
+      // ========== 🎙️ !voice — لوحة الصوت ==========
+      // ============================================================
+      if (cmd === 'voice' || cmd === 'صوت' || cmd === 'لوحة_الصوت') {
+        if (!(await hasPermission(message.member, guildId))) {
+          sentReply = await message.reply('❌ تحتاج صلاحية متحكم.');
+          deleteAfter(sentReply);
+          return;
+        }
+
+        const voiceConfig = await getGuildConfig(guildId);
+
+        if (!voiceConfig.voiceCreatorChannelId) {
+          sentReply = await message.reply('⚠️ لم يتم تعيين قناة الصانع. استخدم `!تعيين قناة_الصانع #قناة`.');
+          deleteAfter(sentReply);
+          return;
+        }
+
+        if (!voiceConfig.voiceCategoryId) {
+          sentReply = await message.reply('⚠️ لم يتم تعيين الكاتقوري الصوتي. استخدم `!تعيين كاتقوري_صوتي #كاتقوري`.');
+          deleteAfter(sentReply);
+          return;
+        }
+
+        const embed = new EmbedBuilder()
+          .setTitle('🎙️ لوحة التحكم الصوتية')
+          .setDescription(
+            '**للتحكم في رومك الصوتي:**\n\n' +
+            '> ادخل قناة **🔊 Creator Channel** لإنشاء رومك\n' +
+            '> اضغط على الأزرار أدناه للتحكم في رومك\n\n' +
+            '**⚠️ ملاحظة:** لازم تكون داخل روم صوتي مؤقت عشان تشتغل الأزرار.'
+          )
+          .setColor(THEME.ORANGE)
+          .setFooter({ text: brand });
+
+        const row1 = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('vc_rename').setLabel('تغيير الاسم').setStyle(BTN.MAIN).setEmoji('✏️'),
+          new ButtonBuilder().setCustomId('vc_limit').setLabel('تغيير الحد').setStyle(BTN.MAIN).setEmoji('👥'),
+          new ButtonBuilder().setCustomId('vc_lock').setLabel('قفل الروم').setStyle(BTN.MAIN).setEmoji('🔒'),
+          new ButtonBuilder().setCustomId('vc_unlock').setLabel('فتح الروم').setStyle(BTN.MAIN).setEmoji('🔓'),
+        );
+
+        const row2 = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('vc_permit').setLabel('السماح لعضو').setStyle(BTN.ALT).setEmoji('👤'),
+          new ButtonBuilder().setCustomId('vc_reject').setLabel('منع عضو').setStyle(BTN.ALT).setEmoji('⛔'),
+          new ButtonBuilder().setCustomId('vc_unblock').setLabel('إلغاء المنع').setStyle(BTN.ALT).setEmoji('✅'),
+          new ButtonBuilder().setCustomId('vc_kick').setLabel('طرد عضو').setStyle(BTN.ALT).setEmoji('👢'),
+        );
+
+        const row3 = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('vc_transfer').setLabel('نقل الملكية').setStyle(BTN.ALT).setEmoji('👑'),
+          new ButtonBuilder().setCustomId('vc_claim').setLabel('استلام الروم').setStyle(BTN.ALT).setEmoji('📌'),
+          new ButtonBuilder().setCustomId('vc_delete').setLabel('حذف الروم').setStyle(BTN.MAIN).setEmoji('❌'),
+        );
+
+        let targetChannel = message.channel;
+        if (voiceConfig.voicePanelChannelId) {
+          const pc = message.guild.channels.cache.get(voiceConfig.voicePanelChannelId);
+          if (pc) targetChannel = pc;
+        }
+
+        try {
+          await targetChannel.send({
+            embeds: [embed],
+            components: [row1, row2, row3],
+          });
+          sentReply = await message.reply(`✅ تم إنشاء لوحة الصوت في ${targetChannel}.`);
+          deleteAfter(sentReply);
+        } catch (err) {
+          sentReply = await message.reply(`❌ فشل الإنشاء: ${err.message}`);
+          deleteAfter(sentReply);
+        }
         return;
       }
 
@@ -1966,7 +2283,8 @@ client.on('messageCreate', async (message) => {
         deleteAfter(sentReply);
         return;
       }
-            // ============================================================
+
+      // ============================================================
       // ========== ✅ !تعيين ==========
       // ============================================================
       if (cmd === 'تعيين') {
@@ -1991,98 +2309,19 @@ client.on('messageCreate', async (message) => {
             .setColor(THEME.ORANGE)
             .setThumbnail(message.guild.iconURL() || null)
             .addFields(
-              {
-                name: '━━━ 🏷️ اسم السيرفر ━━━',
-                value:
-                  '> `اسم_السيرفر [الاسم]` — تغيير اسم السيرفر\n' +
-                  '> `اسم_السيرفر` — إلغاء الاسم المخصص',
-                inline: false,
-              },
-              {
-                name: '━━━ 👋 الترحيب ━━━',
-                value:
-                  '> `ترحيب #قناة` — قناة الترحيب\n' +
-                  '> `رسالة_ترحيب [نص]` — نص الرسالة\n' +
-                  '> `عنوان_ترحيب [نص]` — العنوان\n' +
-                  '> `صورة_ترحيب [رابط]` — الصورة\n' +
-                  '> `خلفية_ترحيب [لون/رابط]` — الخلفية\n' +
-                  '> `دور_دخول @دور` — الرتبة التلقائية',
-                inline: false,
-              },
-              {
-                name: '━━━ 📋 اللوق ━━━',
-                value: '> `سجلات #قناة` — قناة السجلات',
-                inline: false,
-              },
-              {
-                name: '━━━ 📊 المستويات ━━━',
-                value: '> `روم_ليفل #قناة` — قناة إشعارات الليفل',
-                inline: false,
-              },
-              {
-                name: '━━━ 🤖 الأوتو لاين ━━━',
-                value:
-                  '> `اوتر_لاين #روم [نص]` — تعيين النص\n' +
-                  '> `صورة_اوترلاين #روم [رابط]` — الصورة\n' +
-                  '> `تفعيل_اوترلاين #روم` — تفعيل\n' +
-                  '> `تعطيل_اوترلاين #روم` — تعطيل\n' +
-                  '> `حذف_اوترلاين #روم` — حذف',
-                inline: false,
-              },
-              {
-                name: '━━━ 🎫 التذاكر ━━━',
-                value:
-                  '> `تذكرة` — قائمة إدارة التذاكر\n' +
-                  '> `تكت_لوق #روم` — روم استلام التذاكر\n' +
-                  '> `فئة_تكت #كاتقوري` — فئة فتح التذاكر',
-                inline: false,
-              },
-              {
-                name: '━━━ 🎭 الرتب الذاتية ━━━',
-                value: '> `رتب` — قائمة إدارة الرتب الذاتية',
-                inline: false,
-              },
-              {
-                name: '━━━ ⭐ التقييمات ━━━',
-                value:
-                  '> `تقييم [on/off]` — تفعيل/تعطيل\n' +
-                  '> `قناة_تقييم #قناة` — قناة العرض',
-                inline: false,
-              },
-              {
-                name: '━━━ 🕊️ الحمام الزاجل ━━━',
-                value:
-                  '> `روم_زاجل #روم` — قناة الزاجل\n' +
-                  '> `عنوان_زاجل [نص]` — العنوان\n' +
-                  '> `نص_زاجل [نص]` — الوصف\n' +
-                  '> `صورة_زاجل [رابط]` — الصورة',
-                inline: false,
-              },
-              {
-                name: '━━━ 📋 التقديمات ━━━',
-                value:
-                  '> `تقديم` — قائمة إعدادات التقديمات\n' +
-                  '> `تقديم بانل_عنوان [نص]`\n' +
-                  '> `تقديم بانل_وصف [نص]`\n' +
-                  '> `تقديم بانل_صورة [رابط]`\n' +
-                  '> `تقديم بانل_روم #روم`\n' +
-                  '> `تقديم لوق_نتائج #روم`',
-                inline: false,
-              },
-              {
-                name: '━━━ 💡 الاقتراحات ━━━',
-                value: '> `روم_اقتراحات #روم` — روم الاقتراحات',
-                inline: false,
-              },
-              {
-                name: '━━━ 🖼️ الصور العامة ━━━',
-                value:
-                  '> `صورة_بنر [رابط]` — صورة البنر\n' +
-                  '> `صورة_عامة [رابط]` — الصورة العامة\n' +
-                  '> `صورة_بانل [رابط]` — صورة بانل التذاكر\n' +
-                  '> `صورة_رتب [رابط]` — صورة بانل الرتب',
-                inline: false,
-              }
+              { name: '━━━ 🏷️ اسم السيرفر ━━━', value: '> `اسم_السيرفر [الاسم]`', inline: false },
+              { name: '━━━ 🎙️ الرومات الصوتية ━━━', value: '> `قناة_الصانع #قناة` • `كاتقوري_صوتي #كاتقوري` • `روم_لوحة_صوت #قناة`', inline: false },
+              { name: '━━━ 👋 الترحيب ━━━', value: '> `ترحيب` • `رسالة_ترحيب` • `عنوان_ترحيب` • `صورة_ترحيب` • `خلفية_ترحيب` • `دور_دخول`', inline: false },
+              { name: '━━━ 📋 اللوق ━━━', value: '> `سجلات #قناة`', inline: false },
+              { name: '━━━ 📊 المستويات ━━━', value: '> `روم_ليفل #قناة`', inline: false },
+              { name: '━━━ 🤖 الأوتو لاين ━━━', value: '> `اوتر_لاين` • `صورة_اوترلاين` • `تفعيل_اوترلاين` • `تعطيل_اوترلاين` • `حذف_اوترلاين`', inline: false },
+              { name: '━━━ 🎫 التذاكر ━━━', value: '> `تذكرة` • `تكت_لوق` • `فئة_تكت`', inline: false },
+              { name: '━━━ 🎭 الرتب الذاتية ━━━', value: '> `رتب`', inline: false },
+              { name: '━━━ ⭐ التقييمات ━━━', value: '> `تقييم [on/off]` • `قناة_تقييم`', inline: false },
+              { name: '━━━ 🕊️ الزاجل ━━━', value: '> `روم_زاجل` • `عنوان_زاجل` • `نص_زاجل` • `صورة_زاجل`', inline: false },
+              { name: '━━━ 📋 التقديمات ━━━', value: '> `تقديم بانل_عنوان` • `تقديم بانل_وصف` • `تقديم بانل_صورة` • `تقديم بانل_روم` • `تقديم لوق_نتائج`', inline: false },
+              { name: '━━━ 💡 الاقتراحات ━━━', value: '> `روم_اقتراحات #روم`', inline: false },
+              { name: '━━━ 🖼️ الصور العامة ━━━', value: '> `صورة_بنر` • `صورة_عامة` • `صورة_بانل` • `صورة_رتب`', inline: false }
             )
             .setFooter({ text: `${brand} • SETTINGS HUB` });
 
@@ -2107,11 +2346,69 @@ client.on('messageCreate', async (message) => {
           }
           await updateGuildConfig(guildId, { serverName: value });
           sentReply = await message.reply(`✅ تم تعيين اسم السيرفر إلى: **${value}**`);
-          logToChannel(guildId, {
-            title: '🏷️ تغيير اسم السيرفر',
-            color: THEME.ORANGE,
-            description: `**${message.author}** • الاسم الجديد: ${value}`,
-          });
+          logToChannel(guildId, { title: '🏷️ تغيير اسم السيرفر', color: THEME.ORANGE, description: `**${message.author}** • الاسم: ${value}` });
+          deleteAfter(sentReply);
+          return;
+        }
+
+        // ========== 🎙️ قناة الصانع ==========
+        if (sub === 'قناة_الصانع' || sub === 'قناة_صانع') {
+          const voiceChannel = message.mentions.channels.first();
+          if (!voiceChannel) {
+            await updateGuildConfig(guildId, { voiceCreatorChannelId: null });
+            sentReply = await message.reply('✅ تم إلغاء تعيين قناة الصانع.');
+            deleteAfter(sentReply);
+            return;
+          }
+          if (voiceChannel.type !== ChannelType.GuildVoice) {
+            sentReply = await message.reply('⚠️ يجب أن تمنشن **قناة صوتية**.');
+            deleteAfter(sentReply);
+            return;
+          }
+          await updateGuildConfig(guildId, { voiceCreatorChannelId: voiceChannel.id });
+          sentReply = await message.reply(`✅ تم تعيين قناة الصانع إلى: **${voiceChannel.name}**\n\n> 🔓 أي عضو يدخل هذه القناة → سيتم إنشاء روم صوتي خاص به.`);
+          logToChannel(guildId, { title: '🎙️ تعيين قناة الصانع', color: THEME.ORANGE, description: `**${message.author}** • القناة: ${voiceChannel.name}` });
+          deleteAfter(sentReply);
+          return;
+        }
+
+        // ========== 🎙️ الكاتقوري الصوتي ==========
+        if (sub === 'كاتقوري_صوتي' || sub === 'كاتقوري_صوت') {
+          const category = message.mentions.channels.first();
+          if (!category) {
+            await updateGuildConfig(guildId, { voiceCategoryId: null });
+            sentReply = await message.reply('✅ تم إلغاء تعيين الكاتقوري الصوتي.');
+            deleteAfter(sentReply);
+            return;
+          }
+          if (category.type !== ChannelType.GuildCategory) {
+            sentReply = await message.reply('⚠️ يجب أن تمنشن **كاتقوري** (فئة).');
+            deleteAfter(sentReply);
+            return;
+          }
+          await updateGuildConfig(guildId, { voiceCategoryId: category.id });
+          sentReply = await message.reply(`✅ تم تعيين الكاتقوري الصوتي إلى: **${category.name}**\n\n> 🎙️ الرومات المؤقتة ستُنشأ داخل هذه الفئة.`);
+          logToChannel(guildId, { title: '🎙️ تعيين الكاتقوري الصوتي', color: THEME.ORANGE, description: `**${message.author}** • الفئة: ${category.name}` });
+          deleteAfter(sentReply);
+          return;
+        }
+
+        // ========== 🎙️ روم لوحة الصوت ==========
+        if (sub === 'روم_لوحة_صوت') {
+          const channel = message.mentions.channels.first();
+          if (!channel) {
+            await updateGuildConfig(guildId, { voicePanelChannelId: null });
+            sentReply = await message.reply('✅ تم إلغاء تعيين روم لوحة الصوت.');
+            deleteAfter(sentReply);
+            return;
+          }
+          if (!channel.isTextBased()) {
+            sentReply = await message.reply('⚠️ يجب أن تمنشن **قناة نصية**.');
+            deleteAfter(sentReply);
+            return;
+          }
+          await updateGuildConfig(guildId, { voicePanelChannelId: channel.id });
+          sentReply = await message.reply(`✅ تم تعيين روم لوحة الصوت إلى: **${channel}**\n\n> 🎛️ سيتم إرسال لوحة التحكم في هذا الروم.`);
           deleteAfter(sentReply);
           return;
         }
@@ -2128,19 +2425,14 @@ client.on('messageCreate', async (message) => {
             return;
           }
           if (category.type !== ChannelType.GuildCategory) {
-            sentReply = await message.reply('⚠️ يجب أن تمنشن **كاتقوري** (فئة) وليس قناة عادية.');
+            sentReply = await message.reply('⚠️ يجب أن تمنشن **كاتقوري** (فئة).');
             deleteAfter(sentReply);
             return;
           }
           const settings = await getTicketSettings(guildId);
           settings.categoryId = category.id;
           await saveTicketSettings(guildId, settings);
-          sentReply = await message.reply(`✅ تم تعيين فئة التكت إلى: **${category.name}**\n> سيتم فتح كل التذاكر الجديدة داخل هذه الفئة.`);
-          logToChannel(guildId, {
-            title: '🎫 تعيين فئة التكت',
-            color: THEME.ORANGE,
-            description: `**${message.author}** • الفئة: ${category.name}`,
-          });
+          sentReply = await message.reply(`✅ تم تعيين فئة التكت إلى: **${category.name}**`);
           deleteAfter(sentReply);
           return;
         }
@@ -3658,6 +3950,569 @@ client.on('interactionCreate', async (interaction) => {
   try {
 
     // ============================================================
+    // ========== 🎙️ معالجات Voice Master ==========
+    // ============================================================
+
+    // ✅ زر تغيير الاسم
+    if (interaction.isButton() && interaction.customId === 'vc_rename') {
+      const voiceData = await getVoiceRoomForMember(interaction);
+      if (!voiceData) return interaction.reply({ content: '❌ لازم تكون داخل روم صوتي مؤقت.', ephemeral: true });
+
+      if (voiceData.ownerId !== interaction.user.id) {
+        return interaction.reply({ content: '❌ فقط مالك الروم يقدر يغيّر الاسم.', ephemeral: true });
+      }
+
+      const modal = new ModalBuilder()
+        .setCustomId('vc_rename_modal')
+        .setTitle('تغيير اسم الروم')
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('new_name')
+              .setLabel('الاسم الجديد')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+              .setMinLength(1)
+              .setMaxLength(90)
+              .setValue(interaction.channel.name.replace(/^🔊 /, '').slice(0, 90))
+          )
+        );
+      return await interaction.showModal(modal);
+    }
+
+    // ✅ زر تغيير الحد الأقصى
+    if (interaction.isButton() && interaction.customId === 'vc_limit') {
+      const voiceData = await getVoiceRoomForMember(interaction);
+      if (!voiceData) return interaction.reply({ content: '❌ لازم تكون داخل روم صوتي مؤقت.', ephemeral: true });
+
+      if (voiceData.ownerId !== interaction.user.id) {
+        return interaction.reply({ content: '❌ فقط مالك الروم يقدر يغيّر الحد.', ephemeral: true });
+      }
+
+      const modal = new ModalBuilder()
+        .setCustomId('vc_limit_modal')
+        .setTitle('تغيير الحد الأقصى')
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('new_limit')
+              .setLabel('الحد (0 = بلا حد | 1-99)')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+              .setMaxLength(2)
+              .setValue(String(voiceData.userLimit || 0))
+          )
+        );
+      return await interaction.showModal(modal);
+    }
+
+    // ✅ زر القفل
+    if (interaction.isButton() && interaction.customId === 'vc_lock') {
+      const voiceData = await getVoiceRoomForMember(interaction);
+      if (!voiceData) return interaction.reply({ content: '❌ لازم تكون داخل روم صوتي مؤقت.', ephemeral: true });
+
+      if (voiceData.ownerId !== interaction.user.id) {
+        return interaction.reply({ content: '❌ فقط مالك الروم يقدر يقفل.', ephemeral: true });
+      }
+
+      const channel = interaction.guild.channels.cache.get(voiceData.channelId);
+      if (!channel) return interaction.reply({ content: '❌ الروم غير موجود.', ephemeral: true });
+
+      try {
+        await channel.permissionOverwrites.edit(interaction.guild.id, { Connect: false });
+
+        for (const userId of voiceData.trustedUsers) {
+          await channel.permissionOverwrites.edit(userId, { Connect: true }).catch(() => {});
+        }
+
+        voiceData.locked = true;
+        await voiceData.save();
+
+        await updateVoicePanel(interaction.client, voiceData);
+
+        return interaction.reply({ content: '🔒 تم قفل الروم.', ephemeral: true });
+      } catch (err) {
+        return interaction.reply({ content: `❌ فشل القفل: ${err.message}`, ephemeral: true });
+      }
+    }
+
+    // ✅ زر الفتح
+    if (interaction.isButton() && interaction.customId === 'vc_unlock') {
+      const voiceData = await getVoiceRoomForMember(interaction);
+      if (!voiceData) return interaction.reply({ content: '❌ لازم تكون داخل روم صوتي مؤقت.', ephemeral: true });
+
+      if (voiceData.ownerId !== interaction.user.id) {
+        return interaction.reply({ content: '❌ فقط مالك الروم يقدر يفتح.', ephemeral: true });
+      }
+
+      const channel = interaction.guild.channels.cache.get(voiceData.channelId);
+      if (!channel) return interaction.reply({ content: '❌ الروم غير موجود.', ephemeral: true });
+
+      try {
+        await channel.permissionOverwrites.edit(interaction.guild.id, { Connect: null });
+
+        for (const userId of voiceData.blockedUsers) {
+          await channel.permissionOverwrites.edit(userId, { Connect: false }).catch(() => {});
+        }
+
+        voiceData.locked = false;
+        await voiceData.save();
+
+        await updateVoicePanel(interaction.client, voiceData);
+
+        return interaction.reply({ content: '🔓 تم فتح الروم.', ephemeral: true });
+      } catch (err) {
+        return interaction.reply({ content: `❌ فشل الفتح: ${err.message}`, ephemeral: true });
+      }
+    }
+
+    // ✅ زر السماح لعضو (Trusted)
+    if (interaction.isButton() && interaction.customId === 'vc_permit') {
+      const voiceData = await getVoiceRoomForMember(interaction);
+      if (!voiceData) return interaction.reply({ content: '❌ لازم تكون داخل روم صوتي مؤقت.', ephemeral: true });
+
+      if (voiceData.ownerId !== interaction.user.id) {
+        return interaction.reply({ content: '❌ فقط مالك الروم يقدر يسمح.', ephemeral: true });
+      }
+
+      const modal = new ModalBuilder()
+        .setCustomId('vc_permit_modal')
+        .setTitle('السماح لعضو بالدخول')
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('member_query')
+              .setLabel('اسم المستخدم أو الآيدي')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+              .setPlaceholder('ahmed_2001')
+          )
+        );
+      return await interaction.showModal(modal);
+    }
+
+    // ✅ زر منع عضو (Blocked)
+    if (interaction.isButton() && interaction.customId === 'vc_reject') {
+      const voiceData = await getVoiceRoomForMember(interaction);
+      if (!voiceData) return interaction.reply({ content: '❌ لازم تكون داخل روم صوتي مؤقت.', ephemeral: true });
+
+      if (voiceData.ownerId !== interaction.user.id) {
+        return interaction.reply({ content: '❌ فقط مالك الروم يقدر يمنع.', ephemeral: true });
+      }
+
+      const modal = new ModalBuilder()
+        .setCustomId('vc_reject_modal')
+        .setTitle('منع عضو من الدخول')
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('member_query')
+              .setLabel('اسم المستخدم أو الآيدي')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+              .setPlaceholder('ahmed_2001')
+          )
+        );
+      return await interaction.showModal(modal);
+    }
+
+    // ✅ زر إلغاء المنع
+    if (interaction.isButton() && interaction.customId === 'vc_unblock') {
+      const voiceData = await getVoiceRoomForMember(interaction);
+      if (!voiceData) return interaction.reply({ content: '❌ لازم تكون داخل روم صوتي مؤقت.', ephemeral: true });
+
+      if (voiceData.ownerId !== interaction.user.id) {
+        return interaction.reply({ content: '❌ فقط مالك الروم يقدر يلغي المنع.', ephemeral: true });
+      }
+
+      if (!voiceData.blockedUsers.length) {
+        return interaction.reply({ content: '📭 لا يوجد أعضاء ممنوعون.', ephemeral: true });
+      }
+
+      const modal = new ModalBuilder()
+        .setCustomId('vc_unblock_modal')
+        .setTitle('إلغاء المنع')
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('member_query')
+              .setLabel('اسم المستخدم أو الآيدي')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+              .setPlaceholder('ahmed_2001')
+          )
+        );
+      return await interaction.showModal(modal);
+    }
+
+    // ✅ زر طرد عضو
+    if (interaction.isButton() && interaction.customId === 'vc_kick') {
+      const voiceData = await getVoiceRoomForMember(interaction);
+      if (!voiceData) return interaction.reply({ content: '❌ لازم تكون داخل روم صوتي مؤقت.', ephemeral: true });
+
+      if (voiceData.ownerId !== interaction.user.id) {
+        return interaction.reply({ content: '❌ فقط مالك الروم يقدر يطرد.', ephemeral: true });
+      }
+
+      const modal = new ModalBuilder()
+        .setCustomId('vc_kick_modal')
+        .setTitle('طرد عضو')
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('member_query')
+              .setLabel('اسم المستخدم أو الآيدي')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+              .setPlaceholder('ahmed_2001')
+          )
+        );
+      return await interaction.showModal(modal);
+    }
+
+    // ✅ زر نقل الملكية
+    if (interaction.isButton() && interaction.customId === 'vc_transfer') {
+      const voiceData = await getVoiceRoomForMember(interaction);
+      if (!voiceData) return interaction.reply({ content: '❌ لازم تكون داخل روم صوتي مؤقت.', ephemeral: true });
+
+      if (voiceData.ownerId !== interaction.user.id) {
+        return interaction.reply({ content: '❌ فقط المالك يقدر ينقل الملكية.', ephemeral: true });
+      }
+
+      const modal = new ModalBuilder()
+        .setCustomId('vc_transfer_modal')
+        .setTitle('نقل الملكية')
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('member_query')
+              .setLabel('اسم المستخدم أو الآيدي')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+              .setPlaceholder('ahmed_2001')
+          )
+        );
+      return await interaction.showModal(modal);
+    }
+
+    // ✅ زر استلام الروم
+    if (interaction.isButton() && interaction.customId === 'vc_claim') {
+      const voiceData = await getVoiceRoomForMember(interaction);
+      if (!voiceData) return interaction.reply({ content: '❌ لازم تكون داخل روم صوتي مؤقت.', ephemeral: true });
+
+      const memberVoice = interaction.member.voice.channel;
+      if (!memberVoice || memberVoice.id !== voiceData.channelId) {
+        return interaction.reply({ content: '❌ لازم تكون داخل الروم لاستلامه.', ephemeral: true });
+      }
+
+      const owner = interaction.guild.members.cache.get(voiceData.ownerId);
+      const ownerInRoom = owner?.voice?.channelId === voiceData.channelId;
+
+      if (ownerInRoom) {
+        return interaction.reply({ content: '❌ المالك الأصلي لا يزال موجوداً.', ephemeral: true });
+      }
+
+      const channel = interaction.guild.channels.cache.get(voiceData.channelId);
+      if (!channel) return interaction.reply({ content: '❌ الروم غير موجود.', ephemeral: true });
+
+      await channel.permissionOverwrites.edit(voiceData.ownerId, {
+        ManageChannels: null,
+        MoveMembers: null,
+        MuteMembers: null,
+        DeafenMembers: null,
+      }).catch(() => {});
+
+      await channel.permissionOverwrites.edit(interaction.user.id, {
+        ViewChannel: true,
+        Connect: true,
+        ManageChannels: true,
+        MoveMembers: true,
+        MuteMembers: true,
+        DeafenMembers: true,
+      }).catch(() => {});
+
+      voiceData.ownerId = interaction.user.id;
+      await voiceData.save();
+
+      await updateVoicePanel(interaction.client, voiceData);
+
+      return interaction.reply({ content: `👑 تم نقل ملكية الروم إليك.`, ephemeral: true });
+    }
+
+    // ✅ زر حذف الروم
+    if (interaction.isButton() && interaction.customId === 'vc_delete') {
+      const voiceData = await getVoiceRoomForMember(interaction);
+      if (!voiceData) return interaction.reply({ content: '❌ لازم تكون داخل روم صوتي مؤقت.', ephemeral: true });
+
+      if (voiceData.ownerId !== interaction.user.id) {
+        return interaction.reply({ content: '❌ فقط المالك يقدر يحذف الروم.', ephemeral: true });
+      }
+
+      await interaction.reply({ content: '🗑️ جاري حذف الروم...', ephemeral: true });
+
+      await deleteVoiceRoom(interaction.guild, voiceData.channelId);
+      return;
+    }
+
+    // ============================================================
+    // ========== 🎙️ مودالات Voice Master ==========
+    // ============================================================
+
+    // ✅ تغيير اسم الروم
+    if (interaction.isModalSubmit() && interaction.customId === 'vc_rename_modal') {
+      const voiceData = await getVoiceRoomForMember(interaction);
+      if (!voiceData) return interaction.reply({ content: '❌ لازم تكون داخل روم صوتي مؤقت.', ephemeral: true });
+
+      if (voiceData.ownerId !== interaction.user.id) {
+        return interaction.reply({ content: '❌ فقط المالك يقدر يغيّر الاسم.', ephemeral: true });
+      }
+
+      const newName = interaction.fields.getTextInputValue('new_name').trim();
+      if (!newName) return interaction.reply({ content: '⚠️ الاسم فارغ.', ephemeral: true });
+
+      const channel = interaction.guild.channels.cache.get(voiceData.channelId);
+      if (!channel) return interaction.reply({ content: '❌ الروم غير موجود.', ephemeral: true });
+
+      try {
+        await channel.setName(`🔊 ${newName}`.slice(0, 100));
+        await updateVoicePanel(interaction.client, voiceData);
+        return interaction.reply({ content: `✏️ تم تغيير الاسم إلى: **${newName}**`, ephemeral: true });
+      } catch (err) {
+        return interaction.reply({ content: `❌ فشل التغيير: ${err.message}`, ephemeral: true });
+      }
+    }
+
+    // ✅ تغيير الحد الأقصى
+    if (interaction.isModalSubmit() && interaction.customId === 'vc_limit_modal') {
+      const voiceData = await getVoiceRoomForMember(interaction);
+      if (!voiceData) return interaction.reply({ content: '❌ لازم تكون داخل روم صوتي مؤقت.', ephemeral: true });
+
+      if (voiceData.ownerId !== interaction.user.id) {
+        return interaction.reply({ content: '❌ فقط المالك يقدر يغيّر الحد.', ephemeral: true });
+      }
+
+      const limitStr = interaction.fields.getTextInputValue('new_limit').trim();
+      const limit = parseInt(limitStr);
+      if (isNaN(limit) || limit < 0 || limit > 99) {
+        return interaction.reply({ content: '⚠️ الحد يجب أن يكون بين 0 و 99.', ephemeral: true });
+      }
+
+      const channel = interaction.guild.channels.cache.get(voiceData.channelId);
+      if (!channel) return interaction.reply({ content: '❌ الروم غير موجود.', ephemeral: true });
+
+      try {
+        await channel.setUserLimit(limit);
+        voiceData.userLimit = limit;
+        await voiceData.save();
+        await updateVoicePanel(interaction.client, voiceData);
+        return interaction.reply({ content: limit === 0 ? '👥 تم إزالة الحد الأقصى.' : `👥 تم تعيين الحد إلى ${limit}.`, ephemeral: true });
+      } catch (err) {
+        return interaction.reply({ content: `❌ فشل: ${err.message}`, ephemeral: true });
+      }
+    }
+
+    // ✅ السماح لعضو
+    if (interaction.isModalSubmit() && interaction.customId === 'vc_permit_modal') {
+      const voiceData = await getVoiceRoomForMember(interaction);
+      if (!voiceData) return interaction.reply({ content: '❌ لازم تكون داخل روم صوتي مؤقت.', ephemeral: true });
+
+      if (voiceData.ownerId !== interaction.user.id) {
+        return interaction.reply({ content: '❌ فقط المالك يقدر يسمح.', ephemeral: true });
+      }
+
+      const query = interaction.fields.getTextInputValue('member_query').trim();
+      const target = await findMemberByName(interaction.guild, query);
+      if (!target) return interaction.reply({ content: '❌ لم أجد العضو.', ephemeral: true });
+
+      if (target.id === interaction.user.id) {
+        return interaction.reply({ content: '⚠️ أنت المالك أصلاً.', ephemeral: true });
+      }
+
+      const channel = interaction.guild.channels.cache.get(voiceData.channelId);
+      if (!channel) return interaction.reply({ content: '❌ الروم غير موجود.', ephemeral: true });
+
+      try {
+        await channel.permissionOverwrites.edit(target.id, {
+          ViewChannel: true,
+          Connect: true,
+        });
+
+        if (!voiceData.trustedUsers.includes(target.id)) {
+          voiceData.trustedUsers.push(target.id);
+        }
+        voiceData.blockedUsers = voiceData.blockedUsers.filter(id => id !== target.id);
+        await voiceData.save();
+
+        await updateVoicePanel(interaction.client, voiceData);
+
+        return interaction.reply({ content: `✅ تم السماح لـ **${target.user.tag}** بالدخول.`, ephemeral: true });
+      } catch (err) {
+        return interaction.reply({ content: `❌ فشل: ${err.message}`, ephemeral: true });
+      }
+    }
+
+    // ✅ منع عضو
+    if (interaction.isModalSubmit() && interaction.customId === 'vc_reject_modal') {
+      const voiceData = await getVoiceRoomForMember(interaction);
+      if (!voiceData) return interaction.reply({ content: '❌ لازم تكون داخل روم صوتي مؤقت.', ephemeral: true });
+
+      if (voiceData.ownerId !== interaction.user.id) {
+        return interaction.reply({ content: '❌ فقط المالك يقدر يمنع.', ephemeral: true });
+      }
+
+      const query = interaction.fields.getTextInputValue('member_query').trim();
+      const target = await findMemberByName(interaction.guild, query);
+      if (!target) return interaction.reply({ content: '❌ لم أجد العضو.', ephemeral: true });
+
+      if (target.id === interaction.user.id) {
+        return interaction.reply({ content: '⚠️ ما تقدر تمنع نفسك.', ephemeral: true });
+      }
+
+      const channel = interaction.guild.channels.cache.get(voiceData.channelId);
+      if (!channel) return interaction.reply({ content: '❌ الروم غير موجود.', ephemeral: true });
+
+      try {
+        await channel.permissionOverwrites.edit(target.id, {
+          ViewChannel: true,
+          Connect: false,
+        });
+
+        if (target.voice?.channelId === voiceData.channelId) {
+          await target.voice.disconnect('تم منعه من الروم').catch(() => {});
+        }
+
+        if (!voiceData.blockedUsers.includes(target.id)) {
+          voiceData.blockedUsers.push(target.id);
+        }
+        voiceData.trustedUsers = voiceData.trustedUsers.filter(id => id !== target.id);
+        await voiceData.save();
+
+        await updateVoicePanel(interaction.client, voiceData);
+
+        return interaction.reply({ content: `⛔ تم منع **${target.user.tag}** من الروم.`, ephemeral: true });
+      } catch (err) {
+        return interaction.reply({ content: `❌ فشل: ${err.message}`, ephemeral: true });
+      }
+    }
+
+    // ✅ إلغاء المنع
+    if (interaction.isModalSubmit() && interaction.customId === 'vc_unblock_modal') {
+      const voiceData = await getVoiceRoomForMember(interaction);
+      if (!voiceData) return interaction.reply({ content: '❌ لازم تكون داخل روم صوتي مؤقت.', ephemeral: true });
+
+      if (voiceData.ownerId !== interaction.user.id) {
+        return interaction.reply({ content: '❌ فقط المالك يقدر يلغي المنع.', ephemeral: true });
+      }
+
+      const query = interaction.fields.getTextInputValue('member_query').trim();
+      const target = await findMemberByName(interaction.guild, query);
+      if (!target) return interaction.reply({ content: '❌ لم أجد العضو.', ephemeral: true });
+
+      if (!voiceData.blockedUsers.includes(target.id)) {
+        return interaction.reply({ content: '⚠️ هذا العضو غير ممنوع.', ephemeral: true });
+      }
+
+      const channel = interaction.guild.channels.cache.get(voiceData.channelId);
+      if (!channel) return interaction.reply({ content: '❌ الروم غير موجود.', ephemeral: true });
+
+      try {
+        await channel.permissionOverwrites.edit(target.id, {
+          Connect: null,
+        });
+
+        voiceData.blockedUsers = voiceData.blockedUsers.filter(id => id !== target.id);
+        await voiceData.save();
+
+        await updateVoicePanel(interaction.client, voiceData);
+
+        return interaction.reply({ content: `✅ تم إلغاء منع **${target.user.tag}**.`, ephemeral: true });
+      } catch (err) {
+        return interaction.reply({ content: `❌ فشل: ${err.message}`, ephemeral: true });
+      }
+    }
+
+    // ✅ طرد عضو
+    if (interaction.isModalSubmit() && interaction.customId === 'vc_kick_modal') {
+      const voiceData = await getVoiceRoomForMember(interaction);
+      if (!voiceData) return interaction.reply({ content: '❌ لازم تكون داخل روم صوتي مؤقت.', ephemeral: true });
+
+      if (voiceData.ownerId !== interaction.user.id) {
+        return interaction.reply({ content: '❌ فقط المالك يقدر يطرد.', ephemeral: true });
+      }
+
+      const query = interaction.fields.getTextInputValue('member_query').trim();
+      const target = await findMemberByName(interaction.guild, query);
+      if (!target) return interaction.reply({ content: '❌ لم أجد العضو.', ephemeral: true });
+
+      if (target.id === interaction.user.id) {
+        return interaction.reply({ content: '⚠️ ما تقدر تطرد نفسك.', ephemeral: true });
+      }
+
+      if (target.voice?.channelId !== voiceData.channelId) {
+        return interaction.reply({ content: '⚠️ هذا العضو ليس في الروم.', ephemeral: true });
+      }
+
+      try {
+        await target.voice.disconnect('تم طرده من الروم');
+        return interaction.reply({ content: `👢 تم طرد **${target.user.tag}** من الروم.`, ephemeral: true });
+      } catch (err) {
+        return interaction.reply({ content: `❌ فشل: ${err.message}`, ephemeral: true });
+      }
+    }
+
+    // ✅ نقل الملكية
+    if (interaction.isModalSubmit() && interaction.customId === 'vc_transfer_modal') {
+      const voiceData = await getVoiceRoomForMember(interaction);
+      if (!voiceData) return interaction.reply({ content: '❌ لازم تكون داخل روم صوتي مؤقت.', ephemeral: true });
+
+      if (voiceData.ownerId !== interaction.user.id) {
+        return interaction.reply({ content: '❌ فقط المالك يقدر ينقل الملكية.', ephemeral: true });
+      }
+
+      const query = interaction.fields.getTextInputValue('member_query').trim();
+      const target = await findMemberByName(interaction.guild, query);
+      if (!target) return interaction.reply({ content: '❌ لم أجد العضو.', ephemeral: true });
+
+      if (target.id === interaction.user.id) {
+        return interaction.reply({ content: '⚠️ أنت المالك أصلاً.', ephemeral: true });
+      }
+
+      if (target.voice?.channelId !== voiceData.channelId) {
+        return interaction.reply({ content: '⚠️ العضو لازم يكون داخل الروم.', ephemeral: true });
+      }
+
+      const channel = interaction.guild.channels.cache.get(voiceData.channelId);
+      if (!channel) return interaction.reply({ content: '❌ الروم غير موجود.', ephemeral: true });
+
+      try {
+        await channel.permissionOverwrites.edit(voiceData.ownerId, {
+          ManageChannels: null,
+          MoveMembers: null,
+          MuteMembers: null,
+          DeafenMembers: null,
+        }).catch(() => {});
+
+        await channel.permissionOverwrites.edit(target.id, {
+          ViewChannel: true,
+          Connect: true,
+          ManageChannels: true,
+          MoveMembers: true,
+          MuteMembers: true,
+          DeafenMembers: true,
+        }).catch(() => {});
+
+        voiceData.ownerId = target.id;
+        await voiceData.save();
+
+        await updateVoicePanel(interaction.client, voiceData);
+
+        return interaction.reply({ content: `👑 تم نقل ملكية الروم إلى **${target.user.tag}**.`, ephemeral: true });
+      } catch (err) {
+        return interaction.reply({ content: `❌ فشل: ${err.message}`, ephemeral: true });
+      }
+    }
+
+    // ============================================================
     // ========== 🛡️ معالجات لوحة الحماية ==========
     // ============================================================
 
@@ -4111,7 +4966,6 @@ client.on('interactionCreate', async (interaction) => {
       await updateGuildConfig(interaction.guild.id, { antiSpamMax: max, antiSpamSeconds: seconds });
       return interaction.reply({ content: `✅ تم التحديث: **${max}** رسائل / **${seconds}** ثانية.`, ephemeral: true });
     }
-
     // ============================================================
     // ========== 📋 معالجات لوحة تحكم التقديمات ============
     // ============================================================
@@ -4426,7 +5280,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ============================================================
-    // ========== ✅ أزرار القبول/الرفض للتقديمات ==========
+    // ========== ✅ أزرار القبول/الرفض للتقديمات ============
     // ============================================================
 
     if (interaction.isButton() && interaction.customId.startsWith('apply_accept_')) {
@@ -4435,7 +5289,6 @@ client.on('interactionCreate', async (interaction) => {
       }
 
       const parts = interaction.customId.split('_');
-      // apply_accept_USERID_SECTIONNAME
       const userId = parts[2];
       const sectionName = parts.slice(3).join('_');
 
@@ -4450,7 +5303,6 @@ client.on('interactionCreate', async (interaction) => {
           return interaction.reply({ content: '❌ القسم غير موجود.', ephemeral: true });
         }
 
-        // ✅ إعطاء الرتبة
         let roleAdded = false;
         if (section.roleId) {
           const role = interaction.guild.roles.cache.get(section.roleId);
@@ -4462,14 +5314,12 @@ client.on('interactionCreate', async (interaction) => {
           }
         }
 
-        // ✅ تحديث الحالة في قاعدة البيانات
         await Application.findOneAndUpdate(
           { guildId: interaction.guild.id, userId: member.id, type: section.name, status: 'pending' },
           { status: 'accepted', reviewedBy: interaction.user.id, reviewedAt: new Date() },
           { sort: { createdAt: -1 } }
         ).catch(() => {});
 
-        // ✅ إرسال DM للعضو
         try {
           const dmEmbed = new EmbedBuilder()
             .setTitle('✅ تم قبولك')
@@ -4484,7 +5334,6 @@ client.on('interactionCreate', async (interaction) => {
           await member.send({ embeds: [dmEmbed] }).catch(() => {});
         } catch (e) {}
 
-        // ✅ تحديث الرسالة الأصلية
         const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
           .setColor(THEME.SUCCESS)
           .setTitle(`✅ ${member.user.username} | مقبول`)
@@ -4492,7 +5341,6 @@ client.on('interactionCreate', async (interaction) => {
           .setFooter({ text: `✅ تم القبول بواسطة ${interaction.user.tag}` });
         await interaction.message.edit({ embeds: [updatedEmbed], components: [] }).catch(() => {});
 
-        // ✅ لوق
         logToChannel(interaction.guild.id, {
           title: '✅ قبول تقديم',
           color: THEME.SUCCESS,
@@ -4525,14 +5373,12 @@ client.on('interactionCreate', async (interaction) => {
           return interaction.reply({ content: '❌ القسم غير موجود.', ephemeral: true });
         }
 
-        // ✅ تحديث الحالة في قاعدة البيانات
         await Application.findOneAndUpdate(
           { guildId: interaction.guild.id, userId, type: section.name, status: 'pending' },
           { status: 'rejected', reviewedBy: interaction.user.id, reviewedAt: new Date() },
           { sort: { createdAt: -1 } }
         ).catch(() => {});
 
-        // ✅ إرسال DM للعضو
         if (member) {
           try {
             const dmEmbed = new EmbedBuilder()
@@ -4549,7 +5395,6 @@ client.on('interactionCreate', async (interaction) => {
           } catch (e) {}
         }
 
-        // ✅ تحديث الرسالة الأصلية
         const username = member ? member.user.username : `مستخدم`;
         const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
           .setColor(THEME.ERROR)
@@ -4558,7 +5403,6 @@ client.on('interactionCreate', async (interaction) => {
           .setFooter({ text: `❌ تم الرفض بواسطة ${interaction.user.tag}` });
         await interaction.message.edit({ embeds: [updatedEmbed], components: [] }).catch(() => {});
 
-        // ✅ لوق
         logToChannel(interaction.guild.id, {
           title: '❌ رفض تقديم',
           color: THEME.ERROR,
@@ -4622,7 +5466,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ============================================================
-    // ========== ✅ تقديم النموذج (مع أزرار قبول/رفض) ==========
+    // ========== ✅ تقديم النموذج ============
     // ============================================================
     if (interaction.isModalSubmit() && interaction.customId.startsWith('apply_modal_')) {
       const sectionName = interaction.customId.replace('apply_modal_', '');
@@ -4642,7 +5486,6 @@ client.on('interactionCreate', async (interaction) => {
 
       await Application.create({ guildId, userId: interaction.user.id, type: section.name, answers, status: 'pending' });
 
-      // ✅ إرسال للوق مع أزرار قبول/رفض
       if (section.logChannelId) {
         const logChannel = interaction.guild.channels.cache.get(section.logChannelId);
         if (logChannel) {
@@ -4659,7 +5502,6 @@ client.on('interactionCreate', async (interaction) => {
           logEmbed.addFields(...fields);
           if (section.image) logEmbed.setImage(section.image);
 
-          // ✅ أزرار القبول/الرفض
           const buttonsRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
               .setCustomId(`apply_accept_${interaction.user.id}_${section.name}`)
@@ -4693,7 +5535,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ============================================================
-    // ========== 🕊️ معالجات الزاجل ==========
+    // ========== 🕊️ معالجات الزاجل ============
     // ============================================================
 
     if (interaction.isButton() && interaction.customId === 'pigeon_send') {
@@ -5234,7 +6076,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ============================================================
-    // ========== قائمة التذاكر ==========
+    // ========== قائمة التذاكر ============
     // ============================================================
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_menu') {
       await interaction.deferReply({ ephemeral: true });

@@ -4675,4 +4675,3 @@ client.login(TOKEN).catch((err) => {
   console.error('❌ فشل تسجيل الدخول:', err);
   process.exit(1);
 });
-                                
